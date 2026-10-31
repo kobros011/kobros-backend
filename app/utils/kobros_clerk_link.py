@@ -48,7 +48,10 @@ async def link_kobros_user_to_clerk(
         )
         clerk_id = created.get("id")
     except ClerkApiError as exc:
-        existing = await clerk.find_user_by_username(safe_username)
+        try:
+            existing = await clerk.find_user_by_username(safe_username)
+        except ClerkApiError:
+            existing = None
         if existing and existing.get("id"):
             clerk_id = existing["id"]
             linked_existing = True

@@ -101,7 +101,12 @@ class ClerkClient:
 
     async def find_user_by_username(self, username: str) -> Optional[dict[str, Any]]:
         data = await self._request("GET", f"/users?username={username}&limit=1")
-        users = data.get("data") or []
+        if isinstance(data, list):
+            users = data
+        elif isinstance(data, dict):
+            users = data.get("data") or data.get("users") or []
+        else:
+            users = []
         return users[0] if users else None
 
     async def delete_user(self, clerk_user_id: str) -> None:

@@ -60,12 +60,15 @@ async def ensure_dev_seed_users(
             logs.append(f"SKIP {spec.username} ya existe")
             if clerk.configured and not existing.clerk_user_id and not dry_run:
                 password = _resolve_password(spec)
-                ok, msg = await link_kobros_user_to_clerk(
-                    existing, clerk=clerk, password=password, dry_run=dry_run
-                )
-                logs.append(msg if ok else f"WARN Clerk {spec.username}: {msg}")
-                if ok and password and not os.getenv(spec.password_env):
-                    logs.append(f"   contraseña temporal Clerk: {password}")
+                try:
+                    ok, msg = await link_kobros_user_to_clerk(
+                        existing, clerk=clerk, password=password, dry_run=dry_run
+                    )
+                    logs.append(msg if ok else f"WARN Clerk {spec.username}: {msg}")
+                    if ok and password and not os.getenv(spec.password_env):
+                        logs.append(f"   contraseña temporal Clerk: {password}")
+                except Exception as exc:
+                    logs.append(f"WARN Clerk {spec.username}: {exc!s}")
             continue
 
         password = _resolve_password(spec)
@@ -85,10 +88,13 @@ async def ensure_dev_seed_users(
         logs.append(f"CREADO {spec.username} en PostgreSQL")
 
         if clerk.configured:
-            ok, msg = await link_kobros_user_to_clerk(
-                user, clerk=clerk, password=password, dry_run=False
-            )
-            logs.append(msg if ok else f"ERROR Clerk {spec.username}: {msg}")
+            try:
+                ok, msg = await link_kobros_user_to_clerk(
+                    user, clerk=clerk, password=password, dry_run=False
+                )
+                logs.append(msg if ok else f"WARN Clerk {spec.username}: {msg}")
+            except Exception as exc:
+                logs.append(f"WARN Clerk {spec.username}: {exc!s}")
         else:
             logs.append(f"INFO {spec.username}: sin CLERK_SECRET_KEY, solo BD")
 
