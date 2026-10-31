@@ -41,3 +41,15 @@ def validate_email_optional(email: Optional[str]) -> Optional[str]:
 def clerk_username(username: str) -> str:
     """Clerk no acepta '.' en username; Kobros sí. Misma regla que sync_users_to_clerk."""
     return username.replace(".", "_")
+
+
+def kobros_username_candidates(clerk_login_name: str) -> list[str]:
+    """Usernames en Kobros que pueden corresponder al login de Clerk."""
+    name = (clerk_login_name or "").strip()
+    if not name:
+        return []
+    candidates: list[str] = []
+    for variant in (name, name.replace("_", ".")):
+        if variant and variant not in candidates:
+            candidates.append(variant)
+    return candidates
