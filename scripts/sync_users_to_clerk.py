@@ -22,8 +22,7 @@ if str(ROOT) not in sys.path:
 
 from sqlalchemy import select
 
-from app.core.auth import get_password_hash
-from app.infrastructure.clients.clerk_client import ClerkApiError, ClerkClient
+from app.infrastructure.clients.clerk_client import ClerkClient
 from app.infrastructure.dababase.db import async_session
 from app.infrastructure.models.brand_model import BrandModel  # noqa: F401
 from app.infrastructure.models.client_model import ClientModel  # noqa: F401
@@ -36,31 +35,12 @@ from app.infrastructure.models.models import UserType  # noqa: F401
 from app.infrastructure.models.payment_model import PaymentModel  # noqa: F401
 from app.infrastructure.models.route_model import RouteModel  # noqa: F401
 from app.infrastructure.models.user_model import UserModel
-from app.utils.user_credentials import clerk_username, normalize_email
-
-
-def _type_user_code(type_user) -> str:
-    if hasattr(type_user, "value"):
-        return type_user.value
-    return str(type_user)
+from app.utils.kobros_clerk_link import link_kobros_user_to_clerk
 
 
 def _generate_password() -> str:
     # Clerk mínimo 8; token_urlsafe puede traer caracteres raros — alfanumérico largo
     return secrets.token_urlsafe(12)[:16] + "Aa1"
-
-
-async def _find_clerk_by_username(clerk: ClerkClient, username: str) -> Optional[dict]:
-    try:
-        return await clerk.find_user_by_username(username)
-    except ClerkApiError:
-        return None
-
-
-def _clerk_username(username: str) -> tuple[str, bool]:
-    """Clerk por defecto no acepta '.'; normaliza a '_' si hace falta."""
-    safe = clerk_username(username)
-    return safe, safe != username
 
 
 async def sync_users(
@@ -88,74 +68,25 @@ async def sync_users(
         print(f"Usuarios sin clerk_user_id: {len(users)}")
 
         for user in users:
-            clerk_username, renamed = _clerk_username(user.username)
-            label = f"{user.username} ({user.id})"
-            if renamed:
-                label += f" → clerk/kobros: {clerk_username}"
-            temp_password = fixed_password or _generate_password()
-            type_code = _type_user_code(user.type_user)
-            email = normalize_email(user.email)
-            full_name = user.full_name or user.username
-
             if dry_run:
-                print(f"[dry-run] {label} → crear en Clerk (tipo {type_code})")
+                print(f"[dry-run] {user.username} ({user.id}) → vincular Clerk")
                 continue
 
-            clerk_id: Optional[str] = None
-            linked_existing = False
-            try:
-                created = await clerk.create_user(
-                    username=clerk_username,
-                    password=temp_password,
-                    full_name=full_name,
-                    type_user_code=type_code,
-                    email=email,
-                )
-                clerk_id = created.get("id")
-            except ClerkApiError as exc:
-                existing = await _find_clerk_by_username(clerk, clerk_username)
-                if existing and existing.get("id"):
-                    clerk_id = existing["id"]
-                    linked_existing = True
-                    try:
-                        await clerk.update_user(
-                            clerk_id,
-                            password=temp_password,
-                            type_user_code=type_code,
-                        )
-                        if email:
-                            await clerk.sync_email(clerk_id, email)
-                    except ClerkApiError as link_exc:
-                        print(f"ERROR {label}: {link_exc.message}", file=sys.stderr)
-                        failures += 1
-                        continue
-                else:
-                    print(f"ERROR {label}: {exc.message}", file=sys.stderr)
-                    failures += 1
-                    continue
-
-            if not clerk_id:
-                print(f"ERROR {label}: Clerk no devolvió id", file=sys.stderr)
+            temp_password = fixed_password or _generate_password()
+            ok, msg = await link_kobros_user_to_clerk(
+                user,
+                clerk=clerk,
+                password=temp_password,
+                dry_run=False,
+            )
+            if ok:
+                print(msg)
+                if not fixed_password:
+                    print(f"   contraseña temporal: {temp_password}")
+            else:
+                print(f"ERROR {msg}", file=sys.stderr)
                 failures += 1
                 continue
-
-            if renamed:
-                user.username = clerk_username
-
-            user.clerk_user_id = clerk_id
-            user.hashed_password = get_password_hash(temp_password)
-            if not user.full_name:
-                user.full_name = full_name
-
-            if not user.active:
-                try:
-                    await clerk.ban_user(clerk_id)
-                except ClerkApiError:
-                    pass
-
-            action = "vinculado" if linked_existing else "creado"
-            print(f"OK ({action}) {label} → {clerk_id}")
-            print(f"   contraseña temporal: {temp_password}")
 
         if not dry_run:
             await session.commit()

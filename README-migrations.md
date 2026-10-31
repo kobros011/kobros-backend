@@ -32,6 +32,7 @@ docker compose exec api alembic downgrade <revision_id>
 ## Cómo funciona
 
 - Las migraciones corren automáticamente al iniciar el contenedor (`alembic upgrade head` en el `CMD` del Dockerfile)
+- Tras migrar, el mismo `CMD` ejecuta `python scripts/ensure_dev_users.py` (usuarios dev **admin.carlos** y **admin.david** si no existen)
 - El driver para migraciones es `psycopg2` (síncrono), aunque la app usa `asyncpg`
 - La URL se lee de la variable de entorno `DATABASE_URL`, sustituyendo `postgresql+asyncpg://` por `postgresql+psycopg2://`
 

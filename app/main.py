@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Request
+import os
 from app.presentation.routes import user_routes, auth_routes, brand_routes, client_routes, expense_routes, liquidation_routes, loan_routes, payment_routes, route_routes, client_route_routes, expenses_concepts_routes, report_routes
 from app.infrastructure.utils.lifespan import lifespan
 from app.core.exceptions import AppException
@@ -9,13 +10,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Fast Api cobros", lifespan=lifespan)
 
-# Origins 
-
-origins = [
+# Origins (local + CORS_ORIGINS separadas por coma para Render/prod)
+_default_origins = [
     "http://localhost",
     "http://localhost:5050",
-    "http://localhost:5173"
+    "http://localhost:5173",
 ]
+_extra = os.getenv("CORS_ORIGINS", "")
+origins = _default_origins + [o.strip() for o in _extra.split(",") if o.strip()]
 
 app.add_middleware(
     CORSMiddleware,
