@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from typing import Optional, List
@@ -22,8 +22,9 @@ async def read_expense(expense_id: UUID, usecases: ExpenseUseCases = Depends(get
     return await usecases.get_expense(expense_id)
 
 @router.get("/", response_model=List[ExpenseRead])
-async def list_expenses(usecases: ExpenseUseCases = Depends(get_expense_usecases)):
-    return await usecases.list_expenses()
+async def list_expenses(request: Request, usecases: ExpenseUseCases = Depends(get_expense_usecases)):
+    filters = dict(request.query_params)
+    return await usecases.list_expenses(filters)
 
 @router.post("/", response_model=ExpenseRead, status_code=status.HTTP_201_CREATED)
 async def create_expense(expense_in: ExpenseCreate, usecases: ExpenseUseCases = Depends(get_expense_usecases)):

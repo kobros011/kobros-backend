@@ -11,7 +11,7 @@ class AbstractClientRouteRepository(ABC):
         pass
 
     @abstractmethod
-    async def list_client_routes(self) -> List[ClientRoute]:
+    async def list_client_routes(self,route_id: Optional[UUID]) -> List[ClientRoute]:
         pass
 
     @abstractmethod
@@ -29,6 +29,8 @@ class AbstractClientRouteRepository(ABC):
             order=model.order,
             client_id=model.cliente_id,
             route_id=model.route_id,
+            full_name=model.client.full_name,
+            id_document=model.client.id_document,
             active=model.active,
             created_at=model.created_at,
             updated_at=model.updated_at,
@@ -39,8 +41,8 @@ class AbstractClientRouteRepository(ABC):
         return ClientRouteModel(
             id=entity.id,
             order=entity.order,
-            client_id=entity.client_id,
             route_id=entity.route_id,
+            cliente_id=entity.client_id,
             active=entity.active,
             created_at=entity.created_at,
             updated_at=entity.updated_at,

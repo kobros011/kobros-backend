@@ -2,7 +2,8 @@ from uuid import UUID
 from typing import Optional, List
 from ..domain.repositories.payment_repository import AbstractPaymentRepository
 from ..domain.entities.payment import Payment
-from ..presentation.shemas.payment_shema import PaymentCreate, PaymentUpdate
+from ..presentation.shemas.payment_shema import PaymentCreate, PaymentUpdate, PaymentFilters, PaymentFullRead, CollectionTodayRead
+from datetime import datetime, date
 
 class PaymentUseCases:
     def __init__(self, repository: AbstractPaymentRepository):
@@ -11,8 +12,14 @@ class PaymentUseCases:
     async def get_payment(self, payment_id: UUID) -> Optional[Payment]:
         return await self.repository.get_payment_by_id(payment_id)
     
-    async def list_payments(self) -> List[Payment]:
-        return await self.repository.list_payments()
+    async def list_payments(self, loan_id: Optional[UUID]) -> List[Payment]:
+        return await self.repository.list_payments(loan_id)
+    
+    async def list_payments_full(self, filters: PaymentFilters) -> List[PaymentFullRead]:
+        return await self.repository.list_payments_full(filters)
+    
+    async def pay_payment(self, id: UUID, value: float):
+        return await self.repository.pay_payment(id=id, value=value)
     
     async def create_payment(self, payment: PaymentCreate) -> Optional[Payment]:
         new_payment = Payment(**payment.model_dump())
@@ -23,3 +30,9 @@ class PaymentUseCases:
     
     async def delete_payment(self, payment_id: UUID):
         return await self.repository.delete_payment(payment_id)
+
+    async def get_total_liquidation(self, pay_date: str, route_id: UUID):
+        return await self.repository.get_total_liquidation(pay_date, route_id)
+
+    async def get_today_collection(self, route_id: UUID, collect_date: date) -> List[CollectionTodayRead]:
+        return await self.repository.list_today_collection(route_id, collect_date)

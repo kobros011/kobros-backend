@@ -15,7 +15,7 @@ class AbstractLiquidationRepository(ABC):
         pass
 
     @abstractmethod
-    async def create_liquidation(self, liquidation: Liquidation) -> Optional[Liquidation]:
+    async def create_liquidation(self, liquidation: Liquidation, route_id: UUID, date) -> Optional[Liquidation]:
         pass
 
     @abstractmethod
@@ -24,6 +24,10 @@ class AbstractLiquidationRepository(ABC):
 
     @abstractmethod
     async def delete_liquidation(self, liquidation_id: UUID):
+        pass
+
+    @abstractmethod
+    async def confirm_liquidation(self, liquidation_id: UUID, confirmed_by: UUID) -> Optional[Liquidation]:
         pass
 
     @staticmethod
@@ -37,6 +41,9 @@ class AbstractLiquidationRepository(ABC):
             total_value_expenses=model.total_value_expenses,
             value_new_loans=model.value_new_loans,
             route_id=model.route_id,
+            collector_id=model.collector_id,
+            admin_confirmed_at=model.admin_confirmed_at,
+            admin_confirmed_by=model.admin_confirmed_by,
             active=model.active,
             created_at=model.created_at,
             updated_at=model.updated_at,
@@ -53,6 +60,9 @@ class AbstractLiquidationRepository(ABC):
             total_value_expenses=entity.total_value_expenses,
             value_new_loans=entity.value_new_loans,
             route_id=entity.route_id,
+            collector_id=entity.collector_id,
+            admin_confirmed_at=entity.admin_confirmed_at,
+            admin_confirmed_by=entity.admin_confirmed_by,
             active=entity.active,
             created_at=entity.created_at,
             updated_at=entity.updated_at,

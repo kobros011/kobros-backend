@@ -8,8 +8,9 @@ class BrandModel(Base):
 
     name = Column(String, nullable=False)
     code = Column(String, nullable=False)
-    loans_number = Column(Integer, default=0, nullable=False)
+    routes_available = Column(Integer, default=0, nullable=False)
 
     users = relationship("UserModel", back_populates="brand")
     clients = relationship("ClientModel", back_populates="brand")
     routes = relationship("RouteModel", back_populates="brand")
+    expensesconcept = relationship("ExpenseConceptModel", back_populates="brand")

@@ -5,4 +5,4 @@ from app.domain.entities.base import Base
 class Brand(Base):
     name: str = ""
     code: str = ""
-    loans_number: int = 0
+    routes_available: int = 0

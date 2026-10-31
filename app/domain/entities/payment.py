@@ -11,5 +11,8 @@ class Payment(Base):
     quota_number: int = ""
     value: float = ""
     credit_value: float = ""
+    applied: float = ""
     status: str = ""
+    liquidated: bool = False
+    date_liquidated: Optional[datetime] = None
     loan_id: UUID = None

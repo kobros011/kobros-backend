@@ -14,3 +14,6 @@ class Liquidation(Base):
     value_new_loans: float = ""
 
     route_id: UUID = None
+    collector_id: Optional[UUID] = None
+    admin_confirmed_at: Optional[datetime] = None
+    admin_confirmed_by: Optional[UUID] = None

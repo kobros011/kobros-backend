@@ -1,55 +1,45 @@
-from datetime import datetime, timedelta, timezone
-from typing import Optional
-import jwt
-from app.infrastructure.dababase.db import get_use_db
-from sqlalchemy.future import select
-from app.infrastructure.models.user_model import UserModel
-import bcrypt
+import os
+import httpx
+from jose import jwt, JWTError
+from functools import lru_cache
+from passlib.context import CryptContext
 
-SECRET_KEY = "7744f211aa1a9762aa7a73fa88104ecb05b6a6c4f41e8b4de7721c10ae0adbb8"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_DAYS = 30
-REFRESH_TOKEN_EXPIRE_DAYS = 32
+_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS))
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
-
-def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
-    to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS))
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
 
 def get_password_hash(password: str) -> str:
-    salt = bcrypt.gensalt()
-    hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
-    return hashed.decode('utf-8')
+    return _pwd_context.hash(password)
 
-def decode_token(token: str) -> dict:
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return _pwd_context.verify(plain_password, hashed_password)
+
+CLERK_JWKS_URL = os.getenv("CLERK_JWKS_URL", "")
+
+_jwks_cache: dict | None = None
+
+
+async def _get_jwks() -> dict:
+    global _jwks_cache
+    if _jwks_cache is not None:
+        return _jwks_cache
+    async with httpx.AsyncClient() as client:
+        response = await client.get(CLERK_JWKS_URL)
+        response.raise_for_status()
+        _jwks_cache = response.json()
+    return _jwks_cache
+
+
+async def verify_clerk_token(token: str) -> dict:
+    """Verify a Clerk session token and return its payload."""
+    jwks = await _get_jwks()
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(
+            token,
+            jwks,
+            algorithms=["RS256"],
+            options={"verify_aud": False},
+        )
         return payload
-    except jwt.ExpiredSignatureError:
-        raise Exception("El token ha expirado")
-    except jwt.InvalidTokenError:
-        raise Exception("Token inválido")
-    
-
-async def get_user(username: str = None, username_id: str = None):
-    db = await get_use_db()
-    results = await db.execute(select(UserModel).where(UserModel.id == username_id if not username else UserModel.username == username))
-    user = results.scalars().first()
-    return user
-
-async def authenticate_user(username: str, password: str):
-    user = await get_user(username=username)
-    if not user: 
-        return False
-    if not bcrypt.checkpw(password.encode('utf-8'), user.hashed_password.encode('utf-8')):
-        return False
-    return user
+    except JWTError as e:
+        raise ValueError(f"Token inválido: {e}")

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Request, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from typing import Optional, List
@@ -8,6 +8,8 @@ from ...use_cases.payment_cases import PaymentUseCases
 from ..shemas.payment_shema import PaymentRead, PaymentUpdate, PaymentCreate
 from ...use_cases.payment_cases import PaymentUseCases
 from ...infrastructure.utils.require_authentication import require_authentication
+from ..shemas.payment_shema import PaymentFilters, PaymentFullRead, CollectionTodayRead
+from datetime import datetime, date as date_type
 
 router = APIRouter(dependencies=[Depends(require_authentication)])
 
@@ -17,13 +19,28 @@ def get_payment_repository(db: AsyncSession = Depends(get_db)) -> PaymentReposit
 def get_payment_usecases(repository: PaymentRepository = Depends(get_payment_repository)) -> PaymentUseCases:
     return PaymentUseCases(repository)
 
+
+@router.get("/", response_model=List[PaymentRead])
+async def list_payments(loan_id: Optional[UUID] = Query(None), usecases: PaymentUseCases = Depends(get_payment_usecases)):
+    return await usecases.list_payments(loan_id)
+
+@router.get("/full", response_model=List[PaymentFullRead])
+async def list_payments_full(request: Request, usecases: PaymentUseCases = Depends(get_payment_usecases)):
+    filters = dict(request.query_params)
+    return await usecases.list_payments_full(filters)
+
+@router.get("/today", response_model=List[CollectionTodayRead])
+async def get_today_collection(
+    route_id: UUID = Query(...),
+    date: Optional[str] = Query(None),
+    usecases: PaymentUseCases = Depends(get_payment_usecases),
+):
+    collect_date = datetime.strptime(date, "%Y-%m-%d").date() if date else date_type.today()
+    return await usecases.get_today_collection(route_id, collect_date)
+
 @router.get("/{payment_id}", response_model=Optional[PaymentRead])
 async def read_payment(payment_id: UUID, usecases: PaymentUseCases = Depends(get_payment_usecases)):
     return await usecases.get_payment(payment_id)
-
-@router.get("/", response_model=List[PaymentRead])
-async def list_payments(usecases: PaymentUseCases = Depends(get_payment_usecases)):
-    return await usecases.list_payments()
 
 @router.post("/", response_model=PaymentRead, status_code=status.HTTP_201_CREATED)
 async def create_payment(payment_in: PaymentCreate, usecases: PaymentUseCases = Depends(get_payment_usecases)):
@@ -33,6 +50,14 @@ async def create_payment(payment_in: PaymentCreate, usecases: PaymentUseCases = 
 async def update_payment(payment_in: PaymentUpdate, usecases: PaymentUseCases = Depends(get_payment_usecases)):
     return await usecases.update_payment(payment=payment_in)
 
+@router.put("/{payment_id}/pay")
+async def pay_payment(payment_id: UUID, value: float = Query(None), usecases: PaymentUseCases = Depends(get_payment_usecases)):
+    return await usecases.pay_payment(payment_id, value)
+
 @router.delete("/{payment_id}")
 async def delete_payment(payment_id: UUID, usecases: PaymentUseCases = Depends(get_payment_usecases)):
     return await usecases.delete_payment(payment_id)
+
+@router.post("/get_total_liquidation")
+async def get_total_liquidation(route_id: UUID, pay_date: str, usecases: PaymentUseCases = Depends(get_payment_usecases)):
+    return await usecases.get_total_liquidation(pay_date, route_id)

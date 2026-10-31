@@ -6,10 +6,13 @@ from ...infrastructure.dababase.db import get_db
 from ...infrastructure.repositories.liquidation_repository import LiquidationRepository
 from ...use_cases.liquidation_cases import LiquidationUseCases
 from ..shemas.liquidation_shema import LiquidationRead, LiquidationUpdate, LiquidationCreate
-from ...use_cases.liquidation_cases import LiquidationUseCases
-from ...infrastructure.utils.require_authentication import require_authentication
+from ...infrastructure.utils.require_authentication import require_authentication, get_current_user
+from ...infrastructure.utils.require_role import require_role
+from ...infrastructure.models.user_model import UserModel
 
 router = APIRouter(dependencies=[Depends(require_authentication)])
+
+_ADMIN_ROLES = ("01", "02", "03")  # dev, super, admin
 
 def get_liquidation_repository(db: AsyncSession = Depends(get_db)) -> LiquidationRepository:
     return LiquidationRepository(db)
@@ -28,6 +31,14 @@ async def list_liquidations(usecases: LiquidationUseCases = Depends(get_liquidat
 @router.post("/", response_model=LiquidationRead, status_code=status.HTTP_201_CREATED)
 async def create_liquidation(liquidation_in: LiquidationCreate, usecases: LiquidationUseCases = Depends(get_liquidation_usecases)):
     return await usecases.create_liquidation(liquidation=liquidation_in)
+
+@router.post("/{liquidation_id}/confirm", response_model=LiquidationRead)
+async def confirm_liquidation(
+    liquidation_id: UUID,
+    usecases: LiquidationUseCases = Depends(get_liquidation_usecases),
+    current_user: UserModel = Depends(require_role(*_ADMIN_ROLES)),
+):
+    return await usecases.confirm_liquidation(liquidation_id, confirmed_by=current_user.id)
 
 @router.put("/{liquidation_id}", response_model=LiquidationRead)
 async def update_liquidation(liquidation_in: LiquidationUpdate, usecases: LiquidationUseCases = Depends(get_liquidation_usecases)):

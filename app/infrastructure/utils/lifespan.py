@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from app.infrastructure.dababase.db import create_tables, async_session
+from app.infrastructure.dababase.db import async_session
 from fastapi import FastAPI
 from ..models.user_model import UserModel
 from sqlalchemy import select
@@ -9,8 +9,6 @@ from ...domain.entities.user import User
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await create_tables()
-
     async with async_session() as session:
         async with session.begin():
             names = ["admin.deibi", "admin.carlos"]
@@ -22,17 +20,15 @@ async def lifespan(app: FastAPI):
                 session.add_all(
                     [
                         UserModel(**User(
-                            type_user="admin",
+                            type_user="dev",
                             username="admin.david",
-                            name="David",
-                            last_name="Agudelo",
+                            full_name="David Agudelo",
                             hashed_password=get_password_hash("m4?L77"),
                         ).__dict__),
                         UserModel(**User(
-                            type_user="admin",
+                            type_user="dev",
                             username="admin.carlos",
-                            name="Carlos",
-                            last_name="Garcia",
+                            full_name="Carlos Garcia",
                             hashed_password=get_password_hash("F_8f15"),
                         ).__dict__),
                     ]

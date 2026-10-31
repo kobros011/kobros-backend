@@ -2,6 +2,7 @@ from sqlalchemy import Column, ForeignKey, Integer
 from sqlalchemy.orm import relationship
 from app.infrastructure.dababase.base_class import Base
 from sqlalchemy.dialects.postgresql import UUID
+from app.domain.entities.client_route import RouteInfo
 
 
 class ClientRouteModel(Base):
@@ -16,3 +17,11 @@ class ClientRouteModel(Base):
     route = relationship("RouteModel", back_populates="clientsroutes")
 
     loans = relationship("LoanModel", back_populates="clientroute")
+
+    @property
+    def info_data(self) -> RouteInfo:
+        return RouteInfo(
+            order=self.order,
+            route_id=self.route_id,
+            route_name=self.route.name,
+        )

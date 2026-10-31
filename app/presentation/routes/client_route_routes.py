@@ -1,0 +1,38 @@
+from fastapi import APIRouter, Depends, Request, status, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from uuid import UUID
+from typing import Optional, List
+from ...infrastructure.dababase.db import get_db
+from ...infrastructure.repositories.client_route_repository import ClientRouteRepository
+from ...use_cases.client_route_cases import ClientRouteUseCases
+from ..shemas.client_route_shema import ClientRouteRead, ClientRouteCreate, ClientRouteUpdate
+from ...use_cases.client_route_cases import ClientRouteUseCases
+from ...infrastructure.utils.require_authentication import require_authentication
+from app.infrastructure.models.user_model import UserModel
+
+router = APIRouter(dependencies=[Depends(require_authentication)])
+
+def get_client_route_repository(db: AsyncSession = Depends(get_db)) -> ClientRouteRepository:
+    return ClientRouteRepository(db)
+
+def get_client_route_usecases(user: UserModel = Depends(require_authentication), repository: ClientRouteRepository = Depends(get_client_route_repository)) -> ClientRouteUseCases:
+    usecases = ClientRouteUseCases(repository=repository)
+    usecases.user = user
+    repository.user = user 
+    return usecases
+
+@router.post("/", response_model=ClientRouteRead, status_code=status.HTTP_201_CREATED)
+async def create_client_route(client_route_in: ClientRouteCreate, usecases: ClientRouteUseCases = Depends(get_client_route_usecases)):
+    return await usecases.create_client_route(client_route=client_route_in)
+
+@router.get("/{client_route_id}", response_model=Optional[ClientRouteRead])
+async def read_client_route(client_route_id: UUID, usecases: ClientRouteUseCases = Depends(get_client_route_usecases)):
+    return await usecases.get_client_route(client_route_id)
+
+@router.get("/", response_model=List[ClientRouteRead])
+async def list_client_routes(route_id: Optional[UUID] = Query(None), usecases: ClientRouteUseCases = Depends(get_client_route_usecases)):
+    return await usecases.list_client_routes(route_id)
+
+@router.put("/{client_route_id}", response_model=ClientRouteRead)
+async def update_client_route(client_route_in: ClientRouteUpdate, usecases: ClientRouteUseCases = Depends(get_client_route_usecases)):
+    return await usecases.update_client_route(client_route=client_route_in)

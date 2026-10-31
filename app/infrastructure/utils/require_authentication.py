@@ -1,28 +1,39 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
-from app.core.auth import SECRET_KEY, ALGORITHM, get_user
+
+from app.core.auth import verify_clerk_token
 from app.infrastructure.models.user_model import UserModel
-from jwt import decode, DecodeError
+from app.infrastructure.dababase.db import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login", auto_error=False)
 
 
-async def require_authentication(token: str = Depends(oauth2_scheme)) -> UserModel:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Las credenciales no son validas",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> UserModel:
+    if not token:
+        raise HTTPException(status_code=401, detail="No se proporcionaron credenciales")
     try:
-        payload = decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if not username:
-            raise credentials_exception
-    except DecodeError:
-        raise credentials_exception
-    user = get_user(username)
+        payload = await verify_clerk_token(token)
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=str(e))
 
+    clerk_user_id: str = payload.get("sub")
+    if not clerk_user_id:
+        raise HTTPException(status_code=401, detail="Token sin subject")
+
+    result = await db.execute(
+        select(UserModel).where(UserModel.clerk_user_id == clerk_user_id)
+    )
+    user = result.scalars().first()
     if not user:
-        raise credentials_exception
+        raise HTTPException(status_code=401, detail="Usuario no registrado en Kobros")
+    if not user.active:
+        raise HTTPException(status_code=403, detail="Usuario inactivo")
     return user
+
+
+require_authentication = get_current_user

@@ -1,55 +1,63 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordRequestForm
-from app.core import auth
-from app.domain.entities import auth as auth_schemas
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
+
+from app.infrastructure.dababase.db import get_db
+from app.infrastructure.models.brand_model import BrandModel
+from app.infrastructure.models.user_model import UserModel
+from app.infrastructure.utils.require_authentication import get_current_user
 
 router = APIRouter()
 
-@router.post("/login", response_model=auth_schemas.Token)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    user = await auth.authenticate_user(form_data.username, form_data.password)
 
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Usuario o contraseña incorrectos",
-        )
-
-    if not user.active:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no valido"
-        )
-
-    access_token = auth.create_access_token(data={"sub": str(user.id)})
-    refresh_token = auth.create_refresh_token(data={"sub": str(user.id)})
-    return auth_schemas.Token(access_token=access_token, refresh_token=refresh_token)
+def _type_user_code(user: UserModel) -> str:
+    if hasattr(user.type_user, "value"):
+        return user.type_user.value
+    return str(user.type_user)
 
 
-@router.post("/refresh", response_model=auth_schemas.Token)
-async def refresh_token(token: str):
-    try:
-        payload = auth.decode_token(token)
-        username_id: str = payload.get("sub")
-        if not username_id:
-            raise HTTPException(status_code=401, detail="Token inválido")
+class VerifyBrandCodeRequest(BaseModel):
+    code: str
 
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=str(e))
 
-    user = await auth.get_user(username_id=username_id)
+@router.get("/me")
+async def me(
+    current_user: UserModel = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    brand_name = None
+    if current_user.brand_id:
+        result = await db.execute(select(BrandModel).where(BrandModel.id == current_user.brand_id))
+        brand = result.scalars().first()
+        brand_name = brand.name if brand else None
 
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El usuario no fue encontrado",
-        )
+    return {
+        "id": str(current_user.id),
+        "username": current_user.username,
+        "email": current_user.email,
+        "full_name": current_user.full_name,
+        "type_user": _type_user_code(current_user),
+        "document_id": current_user.document_id,
+        "brand_id": str(current_user.brand_id) if current_user.brand_id else None,
+        "brand_name": brand_name,
+        "clerk_user_id": current_user.clerk_user_id,
+        "active": current_user.active,
+    }
 
-    if not user.active:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no valido"
-        )
 
-    access_token = auth.create_access_token(data={"sub": str(user.id)})
-    refresh_token = auth.create_refresh_token(data={"sub": str(user.id)})
+@router.post("/verify-brand-code")
+async def verify_brand_code(
+    payload: VerifyBrandCodeRequest,
+    current_user: UserModel = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not current_user.brand_id:
+        # dev users (no brand) are exempt
+        return {"verified": True}
 
-    return auth_schemas.Token(access_token=access_token, refresh_token=refresh_token)
+    result = await db.execute(select(BrandModel).where(BrandModel.id == current_user.brand_id))
+    brand = result.scalars().first()
+    if not brand or brand.code != payload.code:
+        raise HTTPException(status_code=403, detail="Código de marca incorrecto")
+    return {"verified": True}
