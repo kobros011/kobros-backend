@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 from sqlalchemy.orm import selectinload
-from sqlalchemy import or_, select, asc, func
+from sqlalchemy import and_, or_, select, asc, func
 from ..models.payment_model import PaymentModel
 from ..models.loan_model import LoanModel
 from ..models.client_model import ClientRouteModel
@@ -318,9 +318,17 @@ class PaymentRepository(AbstractPaymentRepository):
             stmt = await self.get_stmt_load_more_info()
             stmt = stmt.where(
                 ClientRouteModel.route_id == route_id,
-                PaymentModel.pay_date <= collect_date,
-                PaymentModel.status != PaymentStatus.paid.value,
                 PaymentModel.liquidated == False,
+                or_(
+                    and_(
+                        PaymentModel.status != PaymentStatus.paid.value,
+                        PaymentModel.pay_date <= collect_date,
+                    ),
+                    and_(
+                        PaymentModel.status == PaymentStatus.paid.value,
+                        PaymentModel.payment_date == collect_date,
+                    ),
+                ),
             ).order_by(asc(ClientRouteModel.order))
             result = await self.db.execute(stmt)
             models = result.scalars().all()
