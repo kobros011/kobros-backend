@@ -47,7 +47,7 @@ Al iniciar el contenedor:
 
 1. `alembic upgrade head`
 2. `python scripts/ensure_dev_users.py` (crea `admin.carlos` y `admin.david` si no existen)
-3. `uvicorn` en el puerto **`PORT`** que Render inyecta
+3. `uvicorn` en el puerto `PORT` que Render inyecta
 
 No hace falta un Start Command extra si usas el Dockerfile tal cual.
 
@@ -77,13 +77,43 @@ Anota la URL del servicio, ej. `https://kobros-api.onrender.com`. La usarás en 
 
 ## 3. Clerk
 
-1. [dashboard.clerk.com](https://dashboard.clerk.com) → instancia de la app.
-2. **API keys:** `CLERK_SECRET_KEY`, publishable key para el front.
-3. **JWKS:** `CLERK_JWKS_URL` = `https://<tu-clerk-host>/.well-known/jwks.json`.
-4. **User & authentication:** username requerido; email opcional; password mín. 8; modo **Restricted** (sin registro público).
-5. Si Clerk no permite `.` en username, el backend normaliza a `_` en Clerk (`admin.carlos` → `admin_carlos`).
+Clerk distingue **Development** y **Production**. Son instancias distintas (keys y usuarios no se mezclan).
 
-Tras el primer deploy, revisa logs del backend: si el seed generó contraseñas temporales, cámbialas en Clerk o define `DEV_SEED_*_PASSWORD` antes del deploy.
+### 3.1 Render `*.onrender.com` y Production
+
+**Clerk no permite usar `kobros-frontend.onrender.com` (ni ningún `*.onrender.com`) como dominio de una instancia Production.** Necesitas un **dominio propio** (DNS que controles) y configurarlo en Render + Clerk.
+
+| Objetivo | Clerk | Dominio del front | Keys |
+|----------|--------|-------------------|------|
+| Demo / prueba en Render | **Development** | `https://…onrender.com/srv1/login` | `pk_test_` / `sk_test_` |
+| App “real” con Production | **Production** | `https://app.tudominio.com/srv1/login` (custom en Render) | `pk_live_` / `sk_live_` |
+
+El aviso *development keys* en consola es **esperado** mientras uses `pk_test_` en Render; no es un bug de Kobros.
+
+### 3.2 Pasos si tienes dominio propio
+
+1. **Render → Static Site (front)** → Settings → **Custom Domains** → añade p. ej. `app.tudominio.com` (CNAME al host `*.onrender.com` que indique Render).
+2. **Render → Web Service (API)** → custom domain opcional p. ej. `api.tudominio.com` (recomendado para CORS y cookies).
+3. **Clerk Dashboard** → selector **Production** → **Create production instance** → dominio **`tudominio.com`** o subdominio que Clerk acepte (sigue el asistente).
+4. **Clerk → Domains:** añade los registros DNS que pida Clerk (CNAME `clerk.…` hacia `frontend-api.clerk.services` u otro target que muestre el panel).
+5. Cuando Production esté verificado, copia **pk_live_**, **sk_live_** y **JWKS** de Production.
+6. Actualiza Render:
+   - Front build: `VITE_CLERK_PUBLISHABLE_KEY`, `VITE_URL_API=https://api.tudominio.com`
+   - API: `CLERK_SECRET_KEY`, `CLERK_JWKS_URL`, `CORS_ORIGINS=https://app.tudominio.com`
+7. En Clerk **Paths** (Production): Home / Sign-in → `https://app.tudominio.com/srv1/login` y redirect URLs `https://app.tudominio.com/srv1/*`.
+8. Rebuild front + redeploy API. Vuelve a crear/vincular usuarios en **Production** (seed o `sync_users_to_clerk.py`).
+
+Guía Clerk: [Deploy to production](https://clerk.com/docs/deployments/overview). Dominios en Render: [Custom domains](https://render.com/docs/custom-domains).
+
+### 3.3 Configuración común (Development o Production)
+
+1. [dashboard.clerk.com](https://dashboard.clerk.com) → instancia activa (Development **o** Production).
+2. **API keys:** secret en backend; publishable en build del front (misma instancia).
+3. **JWKS:** `CLERK_JWKS_URL` = URL que muestra Clerk para **esa** instancia (Development y Production tienen JWKS distintos).
+4. **User & authentication:** username requerido; email opcional; password mín. 8; modo **Restricted**.
+5. Username en Clerk: permitir `.` `_` `-` si usas `admin.carlos` en Kobros (`admin_carlos` en login si Clerk no permite punto).
+
+Tras cambiar keys de Clerk, **rebuild** del Static Site y **redeploy** del backend.
 
 ---
 
@@ -100,8 +130,8 @@ Render las inyecta en el build de Vite:
 
 | Variable | Ejemplo |
 |----------|---------|
-| `VITE_CLERK_PUBLISHABLE_KEY` | `pk_live_...` o `pk_test_...` |
-| `VITE_URL_API` | `https://kobros-api.onrender.com` (sin barra final) |
+| `VITE_CLERK_PUBLISHABLE_KEY` | **`pk_live_...`** en producción (no `pk_test_`) |
+| `VITE_URL_API` | `https://kobros-backend.onrender.com` (sin barra final) |
 
 Referencia: `kobros-frontend/.env.clerk.example`.
 
@@ -109,9 +139,9 @@ Referencia: `kobros-frontend/.env.clerk.example`.
 
 Si al recargar rutas profundas ves 404, en Render Static Site añade una **Rewrite**:
 
-- Source: `/*`
-- Destination: `/index.html`
-- Action: Rewrite
+1. Source: `/*`
+2. Destination: `/index.html`
+3. Action: Rewrite
 
 ---
 
@@ -174,6 +204,10 @@ En Render: **Shell** del Web Service (plan de pago) o ejecutar localmente contra
 | Identifier invalid (Clerk) | Punto no permitido en username | Login con `admin_carlos` o permitir `.` en Clerk |
 | API no arranca | Puerto fijo | Dockerfile ya usa `${PORT:-8000}` |
 | Front sin API | Build sin env | Rebuild con `VITE_URL_API` definida |
+| Perfil no carga tras login | Usuario en Clerk sin fila en Kobros o `clerk_user_id` vacío | Redeploy backend (seed) o `sync_users_to_clerk.py`; tras deploy, el primer `/auth/me` puede auto-vincular por username Clerk |
+| Token inválido en `/auth/me` | `CLERK_JWKS_URL` / front con otro proyecto Clerk | Misma instancia Clerk en front y `CLERK_JWKS_URL` del backend |
+| Aviso *development keys* en consola | Front con `pk_test_` en Render | Normal en demo; para `pk_live_` hace falta dominio propio + Clerk Production |
+| Clerk rechaza `onrender.com` en Production | Política de Clerk | Usar instancia **Development** en Render **o** custom domain + Production |
 
 ---
 
