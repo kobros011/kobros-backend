@@ -103,7 +103,7 @@ async def set_user_password(
 @router.post("/{user_id}/send-password-reset")
 async def send_password_reset(
     user_id: UUID,
-    _: UserModel = Depends(require_role(*_SUPER_ROLES)),
+    actor: UserModel = Depends(require_role(*_SUPER_ROLES)),
     db: AsyncSession = Depends(get_db),
     clerk: ClerkClient = Depends(get_clerk_client),
 ):
@@ -114,6 +114,8 @@ async def send_password_reset(
     result = await db.execute(select(UserModel).where(UserModel.id == user_id))
     target = result.scalars().first()
     if not target:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if actor.brand_id and target.brand_id != actor.brand_id:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     if not target.clerk_user_id:
         raise HTTPException(status_code=400, detail="El usuario no tiene cuenta Clerk vinculada")

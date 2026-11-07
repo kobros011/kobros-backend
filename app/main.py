@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Request
 import os
-from app.presentation.routes import user_routes, auth_routes, brand_routes, client_routes, expense_routes, liquidation_routes, loan_routes, payment_routes, route_routes, client_route_routes, expenses_concepts_routes, report_routes
+from app.presentation.routes import user_routes, auth_routes, brand_routes, client_routes, expense_routes, liquidation_routes, loan_routes, payment_routes, route_routes, client_route_routes, expenses_concepts_routes, report_routes, route_movement_routes
 from app.infrastructure.utils.lifespan import lifespan
 from app.core.exceptions import AppException
 from app.core.logger import logger
@@ -56,3 +56,4 @@ app.include_router(route_routes.router, prefix="/routes", tags=["routes"])
 app.include_router(client_route_routes.router, prefix="/clientroute", tags=["clientsroutes"])
 app.include_router(expenses_concepts_routes.router, prefix="/expensesconcepts", tags=["expensesconcepts"])
 app.include_router(report_routes.router, prefix="/reports", tags=["reports"])
+app.include_router(route_movement_routes.router, prefix="/route-movements", tags=["route-movements"])

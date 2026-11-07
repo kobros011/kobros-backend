@@ -27,7 +27,9 @@ class UserUseCases:
         self.clerk = clerk_client or ClerkClient()
 
     async def get_user(self, user_id: UUID) -> Optional[User]:
-        return await self.repository.get_user_by_id(user_id)
+        user = await self.repository.get_user_by_id(user_id)
+        self._ensure_same_brand(user)
+        return user
 
     async def list_users(self, filters: UserFilters) -> List[Optional[User]]:
         return await self.repository.list_users(filters)
@@ -69,8 +71,14 @@ class UserUseCases:
 
     async def update_user(self, user: UserUpdate) -> User:
         existing = await self.repository.get_user_by_id(user.id)
+        self._ensure_same_brand(existing)
         type_user_code = user.type_user
         email = normalize_email(user.email)
+
+        # Only a dev (no brand) may reassign a user's brand; others keep the
+        # user's current brand regardless of what was sent in the body.
+        actor_is_dev = bool(self.user) and self.user.brand_id is None
+        new_brand_id = user.brand_id if actor_is_dev else existing.brand_id
 
         user.type_user = UserType.get_type(user_type=user.type_user)
 
@@ -90,14 +98,22 @@ class UserUseCases:
         payload = user.model_dump(exclude_unset=True)
         payload["email"] = email
         payload["type_user"] = type_user_code
+        payload["brand_id"] = new_brand_id
         return await self.repository.update_user(UserUpdate(**payload))
 
     async def update_password(self, uuid: UUID, password: str):
         new_password = get_password_hash(password)
         return await self.repository.update_password(uuid, new_password)
 
+    def _ensure_same_brand(self, target: User) -> None:
+        """A brand-scoped actor (super/admin) may only act on users of their
+        own brand. A dev (brand_id is None) may act on anyone."""
+        if self.user and self.user.brand_id and target.brand_id != self.user.brand_id:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
     async def set_password(self, user_id: UUID, password: str) -> User:
         user = await self.repository.get_user_by_id(user_id)
+        self._ensure_same_brand(user)
         type_code = _type_user_code(user.type_user)
 
         if not user.clerk_user_id:
@@ -124,6 +140,7 @@ class UserUseCases:
 
     async def toggle_user(self, user_id: UUID):
         existing = await self.repository.get_user_by_id(user_id)
+        self._ensure_same_brand(existing)
         clerk_id = existing.clerk_user_id
         result = await self.repository.toggle_user(user_id)
 

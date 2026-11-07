@@ -65,6 +65,7 @@ class UserRead(BaseModel):
     department: Optional[str]
     type_user: str
     brand_id: UUID | None
+    has_clerk_account: bool = False
     created_at: datetime
     updated_at: Optional[datetime]
     active: bool
@@ -75,14 +76,15 @@ class UserUpdate(BaseModel):
     username: str
     full_name: str
     document_id: str
-    linking_date: datetime
-    address: Optional[str]
-    phone: Optional[str]
-    mobile: Optional[str]
-    city: Optional[str]
-    department: Optional[str]
+    linking_date: Optional[datetime] = None
+    address: Optional[str] = ''
+    phone: Optional[str] = ''
+    mobile: Optional[str] = ''
+    city: Optional[str] = ''
+    department: Optional[str] = ''
     type_user: str
     email: Optional[str] = None
+    brand_id: Optional[UUID] = None
 
     @field_validator("email", mode="before")
     @classmethod
@@ -139,6 +141,7 @@ def user_to_read(user) -> UserRead:
         department=user.department,
         type_user=type_user,
         brand_id=user.brand_id,
+        has_clerk_account=bool(user.clerk_user_id),
         created_at=user.created_at,
         updated_at=user.updated_at,
         active=user.active,

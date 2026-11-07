@@ -21,7 +21,7 @@ class BrandRepository(AbstractBrandRepository):
 
 
         if self.user.brand_id:
-            stmt = select(BrandModel).where(BrandModel.brand_id == self.user.brand_id)
+            stmt = select(BrandModel).where(BrandModel.id == self.user.brand_id)
         else:
             stmt = select(BrandModel)
         
@@ -81,7 +81,7 @@ class BrandRepository(AbstractBrandRepository):
             current_brand = result.scalars().first()
             
             if not current_brand:
-                raise ValueError("Marca no encontrada")
+                raise NotFoundException("Marca no encontrada")
 
             update_data = brand.model_dump(exclude_unset=True)
             

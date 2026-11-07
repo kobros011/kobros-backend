@@ -32,7 +32,13 @@ class UserRepository(AbstractUserRepository):
         stmt = stmt.where(UserModel.active==active)
 
         if text:
-            stmt = stmt.where((UserModel.full_name.ilike(f"%{text}%")) | (UserModel.document_id.ilike(f"%{text}%")))
+            like = f"%{text}%"
+            stmt = stmt.where(
+                (UserModel.full_name.ilike(like))
+                | (UserModel.document_id.ilike(like))
+                | (UserModel.username.ilike(like))
+                | (UserModel.email.ilike(like))
+            )
 
         return stmt
 
