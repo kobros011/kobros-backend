@@ -65,7 +65,7 @@ async def load_raw(db) -> Raw:
     loans = [
         {
             "id": l.id, "number": l.loan_number, "clientroute_id": l.clientroute_id,
-            "total": float(l.value_total_loan or 0), "active": bool(l.active),
+            "total": float(l.value_total_loan or 0), "capital": float(l.value_capital or 0), "active": bool(l.active),
         }
         for l in (await db.execute(select(LoanModel))).scalars().all()
     ]
@@ -145,7 +145,7 @@ def compute_summary(raw: Raw, scope: dict, today: date, days: int) -> dict:
     stats = loan_stats(raw, today)
     loans = [l for l in _loans_in_scope(raw, route_ids) if l["active"]]
 
-    per_route = defaultdict(lambda: {"loans": 0, "active": 0.0, "lent": 0.0, "paid": 0.0, "late_loans": 0, "late": 0.0, "mild": 0.0, "critical": 0.0})
+    per_route = defaultdict(lambda: {"loans": 0, "active": 0.0, "capital": 0.0, "lent": 0.0, "paid": 0.0, "late_loans": 0, "late": 0.0, "mild": 0.0, "critical": 0.0})
     critical_clients = set()
     for loan in loans:
         s = stats[loan["id"]]
@@ -153,6 +153,7 @@ def compute_summary(raw: Raw, scope: dict, today: date, days: int) -> dict:
         if s["balance"] > 0:
             row["loans"] += 1
             row["active"] += s["balance"]
+            row["capital"] += s["balance"] * loan["capital"] / loan["total"] if loan["total"] else 0.0  # capital pendiente (misma proporción)
             row["lent"] += loan["total"]
             row["paid"] += s["paid"]
         if s["overdue_amount"] > 0:
@@ -215,6 +216,7 @@ def compute_summary(raw: Raw, scope: dict, today: date, days: int) -> dict:
     return {
         "kpis": {
             "portfolio_total": round(portfolio_total, 2), "portfolio_loans": total("loans"),
+            "portfolio_capital": round(total("capital"), 2), "portfolio_interest": round(portfolio_total - total("capital"), 2),
             "delinquency_total": round(late_total, 2), "delinquency_loans": total("late_loans"),
             "delinquency_rate": _pct(late_total, portfolio_total),
             "total_lent": round(total("lent"), 2), "total_paid": round(total("paid"), 2),

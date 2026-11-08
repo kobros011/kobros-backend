@@ -152,7 +152,7 @@ class PaymentRepository(AbstractPaymentRepository):
         try:
             stmt = await self.get_stmt_load_more_info()
             stmt = await self.get_stmt(filters, stmt)
-            stmt = stmt.order_by(asc(ClientRouteModel.order))
+            stmt = stmt.order_by(asc(ClientRouteModel.order), asc(ClientModel.full_name), asc(PaymentModel.quota_number), asc(PaymentModel.id))
 
             result = await self.db.execute(stmt)
             models = result.scalars().all()
@@ -265,7 +265,7 @@ class PaymentRepository(AbstractPaymentRepository):
                         PaymentModel.payment_date == collect_date,
                     ),
                 ),
-            ).order_by(asc(ClientRouteModel.order))
+            ).order_by(asc(ClientRouteModel.order), asc(ClientModel.full_name), asc(PaymentModel.quota_number), asc(PaymentModel.id))
             result = await self.db.execute(stmt)
             models = result.scalars().all()
             return [self.model_to_collection_read(m) for m in models]

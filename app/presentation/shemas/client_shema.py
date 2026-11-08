@@ -1,4 +1,4 @@
-﻿from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator
 from uuid import UUID
 from datetime import datetime
 from typing import Optional, List
@@ -17,6 +17,14 @@ class ClientReferenceCreate(BaseModel):
     phone: Optional[str] = None
 
 
+class ClientRouteInfoRead(BaseModel):
+    """Prioridad del cliente en una de sus rutas (1 = primero en visitarse)."""
+    route_id: UUID
+    route_name: str = ""
+    clientroute_id: UUID
+    order: int
+
+
 class ClientRead(BaseModel):
     id: UUID
     full_name: str
@@ -28,6 +36,7 @@ class ClientRead(BaseModel):
     linking_date: Optional[datetime]
     beak: Optional[float]
     routes_ids: list[UUID] = []
+    routes: List[ClientRouteInfoRead] = []
     brand_id: UUID
     active: bool
     created_at: datetime
@@ -44,7 +53,7 @@ class ClientRead(BaseModel):
 class ClientMoreInfoRead(ClientRead):
     route_name: Optional[str] = ""
     route_id: Optional[UUID] = None
-    order: Optional[int] = ""
+    order: Optional[int] = None
 
 
 class ClientCreate(BaseModel):
@@ -80,6 +89,7 @@ class ClientUpdate(BaseModel):
     current_phone: str = ""
     current_mobile: str = ""
     neighborhood: str = ""
+    routes_ids: Optional[List[UUID]] = None  # None = no tocar las rutas del cliente
 
     guarantor_name: Optional[str] = None
     guarantor_cedula: Optional[str] = None

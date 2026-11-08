@@ -15,6 +15,7 @@ class Client(Base):
     linking_date: datetime = ""
     beak: float = ""
     routes_ids: List[UUID] = field(default_factory=list)
+    routes: List[Any] = field(default_factory=list)
 
     brand_id: UUID = None
 

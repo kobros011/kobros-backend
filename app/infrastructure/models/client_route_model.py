@@ -14,7 +14,7 @@ class ClientRouteModel(Base):
     client = relationship("ClientModel", back_populates="clientsroutes")
 
     route_id = Column(UUID(as_uuid=True), ForeignKey("routes.id"))
-    route = relationship("RouteModel", back_populates="clientsroutes")
+    route = relationship("RouteModel", back_populates="clientsroutes", lazy="selectin")
 
     loans = relationship("LoanModel", back_populates="clientroute")
 

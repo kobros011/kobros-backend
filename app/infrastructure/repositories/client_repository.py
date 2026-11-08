@@ -18,7 +18,7 @@ from ..repositories.client_route_repository import ClientRouteRepository
 from ..repositories.client_reference_repository import ClientReferenceRepository
 from ...presentation.shemas.client_shema import ClientUpdate, ClientFilters, ClientCreate
 from app.infrastructure.utils.validator_errors import ValidatorErrors
-from app.core.exceptions import ConflictException, NotFoundException
+from app.core.exceptions import BadRequestException, ConflictException, ForbiddenException, NotFoundException
 from app.core.pagination import PaginationParams, paginate_or_all
 
 
@@ -125,9 +125,9 @@ class ClientRepository(AbstractClientRepository):
     async def create_client(self, client: ClientCreate) -> Optional[Client]:
 
         async def create_routes_client(client_id: UUID):
-            for route_id in client.routes_ids:
-                clint_route = await ClientRouteRepository.create_order_client_route(self=self, cliente_id=client_id, route_id=route_id)
-                return clint_route
+            route_repo = ClientRouteRepository(self.db)
+            for route_id in dict.fromkeys(client.routes_ids):
+                await route_repo.create_order_client_route(cliente_id=client_id, route_id=route_id)
             
         try:
             stmt = (
@@ -190,7 +190,8 @@ class ClientRepository(AbstractClientRepository):
                 raise NotFoundException("El cliente no fue encontrado")
 
             references = client.references
-            update_data = client.model_dump(exclude_unset=True, exclude={"references"})
+            routes_ids = client.routes_ids
+            update_data = client.model_dump(exclude_unset=True, exclude={"references", "routes_ids"})
 
             current_client = self.update_values(update_data, current_model=current_client)
 
@@ -201,6 +202,9 @@ class ClientRepository(AbstractClientRepository):
                     [r.model_dump() for r in references],
                 )
 
+            if routes_ids is not None:
+                await self._sync_client_routes(current_client, routes_ids)
+
             await self.db.commit()
             await self.db.refresh(current_client, attribute_names=["clientsroutes", "references"])
             return self.model_to_entity(current_client)
@@ -209,7 +213,41 @@ class ClientRepository(AbstractClientRepository):
             await self.db.rollback()
             user_message = ValidatorErrors.integrity_error(e)
             raise ConflictException(user_message)
-        
+
+    async def _sync_client_routes(self, client: ClientModel, routes_ids: List[UUID]) -> None:
+        """Deja al cliente en exactamente `routes_ids`: agrega las nuevas (al final) y quita las que sobran
+        (solo si no tienen créditos con cuotas pendientes). Solo administración."""
+        role = getattr(self.user.type_user, "value", str(self.user.type_user))
+        if role in ("04", "05"):
+            raise ForbiddenException("Solo un administrador puede cambiar las rutas de un cliente")
+
+        desired = list(dict.fromkeys(routes_ids))
+        if not desired:
+            raise BadRequestException("El cliente debe tener al menos una ruta")
+        valid = await self.db.execute(select(RouteModel.id).where(RouteModel.id.in_(desired), RouteModel.brand_id == client.brand_id))
+        if len(valid.scalars().all()) != len(desired):
+            raise NotFoundException("Alguna ruta no existe o es de otra marca")
+
+        current = {cr.route_id: cr for cr in client.clientsroutes if cr.active is not False}
+        to_remove = [route_id for route_id in current if route_id not in desired]
+        route_repo = ClientRouteRepository(self.db)
+
+        for route_id in to_remove:
+            pending = await self.db.execute(
+                select(func.count()).select_from(LoanModel)
+                .where(LoanModel.clientroute_id == current[route_id].id, LoanModel.active.is_not(False), LoanModel.pending_quotas > 0)
+            )
+            if pending.scalar_one():
+                raise ConflictException("No puedes quitar una ruta en la que el cliente tiene créditos con cuotas pendientes")
+        for route_id in to_remove:
+            current[route_id].active = False
+        await self.db.flush()
+        for route_id in to_remove:
+            await route_repo.compact_route(route_id)
+        for route_id in desired:
+            if route_id not in current:
+                await route_repo.create_order_client_route(cliente_id=client.id, route_id=route_id)
+
     async def toggle_client(self, client_id:UUID):
         try:
             result = await self.db.execute(

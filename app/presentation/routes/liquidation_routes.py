@@ -40,7 +40,7 @@ async def preview_liquidation(
     route_id: UUID,
     day: Optional[date] = Query(None, alias="date"),
     collector_id: Optional[UUID] = None,
-    usecases: LiquidationUseCases = Depends(operate_usecases),
+    usecases: LiquidationUseCases = Depends(get_usecases),
 ):
     return await usecases.preview(route_id, day or today_bogota(), collector_id)
 

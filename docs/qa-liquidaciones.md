@@ -57,3 +57,10 @@ Cambios de comportamiento: el cobrador ya no lista usuarios, no activa/desactiva
 ## Job diario de mora (sin worker)
 
 `app/infrastructure/utils/default_scheduler.py` corre desde el `lifespan` del API: al arrancar y todos los días 00:05 (Bogotá). Pasa a `mora` las cuotas `pendiente` con `pay_date < hoy` sin cobrar (créditos y rutas activos) y suma su faltante a `loans.total_default`. Idempotente, con advisory lock. Se apaga con `MORA_JOB_ENABLED=false`. Manual/cron externo: `python scripts/mark_overdue_payments.py [--dry-run]`. QA: `scripts/qa_mora_job.py` (13/13).
+
+## Cambios de permisos y prioridad de clientes (QA)
+
+- **Liquidaciones:** solo administración cierra, edita, elimina, confirma o reabre; el cobrador consulta la vista previa y los cierres de **su ruta** (no solo los suyos). `qa_liquidations` 55/55, `qa_liquidations_flow` 60/60.
+- **Administrador vs Super:** un admin (03) no puede crear, editar ni activar/desactivar usuarios Super/dev; el Super sí. `qa_security` 77/77.
+- **Prioridad de clientes por ruta** (`scripts/qa_client_order.py`, 25/25): cliente en varias rutas con prioridad independiente en cada una, mover uno / varios / orden completo sin repetidos ni huecos, movimientos simultáneos, editar las rutas de un cliente y permisos. Migración `a3b4c5d6e7f8` (índice único `(cliente, ruta)` activo, fusión de duplicados y renumeración 1..n).
+- **Dashboard:** `portfolio_capital` e `portfolio_interest` (reparto proporcional del saldo); `qa_reports` 69/69 con el oráculo independiente actualizado.

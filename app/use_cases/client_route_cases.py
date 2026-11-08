@@ -20,3 +20,12 @@ class ClientRouteUseCases:
     
     async def update_client_route(self, client_route: ClientRouteUpdate) -> Optional[ClientRoute]:
         return await self.repository.update_client_route(client_route)
+
+    async def move_client_route(self, client_route_id: UUID, position: int) -> List[ClientRoute]:
+        return await self.repository.move_client_route(client_route_id, position)
+
+    async def reorder_route(self, route_id: UUID, ordered_ids: List[UUID]) -> List[ClientRoute]:
+        return await self.repository.reorder_route(route_id, ordered_ids)
+
+    async def bulk_move(self, route_id: UUID, client_route_ids: List[UUID], target: str, position: Optional[int]) -> List[ClientRoute]:
+        return await self.repository.bulk_move(route_id, client_route_ids, target, position)

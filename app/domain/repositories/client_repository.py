@@ -38,7 +38,12 @@ class AbstractClientRepository(ABC):
 
     @staticmethod
     def model_to_entity(model: ClientModel) -> Client:
-        routes_ids = [AbstractClientRouteRepository.model_to_entity(m).route_id for m in model.clientsroutes]
+        active_routes = [m for m in model.clientsroutes if m.active is not False]
+        routes_ids = [m.route_id for m in active_routes]
+        routes = sorted(
+            ({"route_id": m.route_id, "route_name": m.route.name if m.route else "", "clientroute_id": m.id, "order": m.order} for m in active_routes),
+            key=lambda item: (item["route_name"], item["order"]),
+        )
         refs = [
             {"id": str(r.id), "name": r.name, "address": r.address, "phone": r.phone}
             for r in (model.references or [])
@@ -56,6 +61,7 @@ class AbstractClientRepository(ABC):
             beak=model.beak,
             active=model.active,
             routes_ids=routes_ids,
+            routes=routes,
             brand_id=model.brand_id,
             created_at=model.created_at,
             updated_at=model.updated_at,
