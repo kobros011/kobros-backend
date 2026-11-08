@@ -10,6 +10,7 @@ from ..shemas.expense_shema import ExpenseConceptRead, ExpenseConceptUpdate, Exp
 from app.infrastructure.models.user_model import UserModel
 from ...infrastructure.utils.require_authentication import require_authentication
 from ...infrastructure.utils.require_role import require_role
+from ...infrastructure.utils.access import ensure_concept_access
 
 _ALL_ROLES = ("01", "02", "03", "04", "05")
 _MANAGE_ROLES = ("01", "02", "03")
@@ -34,7 +35,13 @@ get_concept_usecases = _usecases_for(*_ALL_ROLES)
 get_concept_manage_usecases = _usecases_for(*_MANAGE_ROLES)
 
 @router.get("/{concept_id}", response_model=ExpenseConceptRead)
-async def read_concept(concept_id: UUID, usecases: ExpenseConceptUseCases = Depends(get_concept_usecases)):
+async def read_concept(
+    concept_id: UUID,
+    usecases: ExpenseConceptUseCases = Depends(get_concept_usecases),
+    db: AsyncSession = Depends(get_db),
+    user: UserModel = Depends(require_authentication),
+):
+    await ensure_concept_access(db, concept_id, user)
     return await usecases.get_concept(concept_id)
 
 @router.get("/", response_model=List[ExpenseConceptRead])

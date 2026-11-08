@@ -62,7 +62,7 @@ class ReportRepository:
             .join(ClientRouteModel, LoanModel.clientroute_id == ClientRouteModel.id)
             .join(ClientModel, ClientRouteModel.cliente_id == ClientModel.id)
             .join(RouteModel, ClientRouteModel.route_id == RouteModel.id)
-            .where(LoanModel.active == True)
+            .where(LoanModel.active == True, RouteModel.active == True)  # igual que el dashboard: rutas inactivas no cuentan
         )
         stmt = stmt.where(stats.c.overdue_amount > 0) if delinquency else stmt.where(stats.c.balance > 0)
 

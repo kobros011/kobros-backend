@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy import and_, or_, select, asc, func, insert
 from ..models.payment_model import PaymentModel
 from ..models.loan_model import LoanModel
+from ..models.route_model import RouteModel
 from ..models.client_model import ClientRouteModel
 from ..models.client_model import ClientModel
 from ...presentation.shemas.payment_shema import PaymentUpdate
@@ -55,9 +56,18 @@ class PaymentRepository(AbstractPaymentRepository):
         payments_to_pay = filters_dict.get("payments_to_pay", False)
         payments_to_pay_today = filters_dict.get("payments_to_pay_today", False)
         payments_pending = filters_dict.get("payments_pending", False)
+        scope_brand = filters_dict.get("_brand_id", None)
+        scope_user = filters_dict.get("_assigned_user_id", None)
 
         if stmt is None:
             stmt = await self.get_stmt_load_more_info()
+
+        if scope_brand or scope_user:
+            stmt = stmt.join(RouteModel, RouteModel.id == ClientRouteModel.route_id)
+            if scope_brand:
+                stmt = stmt.where(RouteModel.brand_id == scope_brand)
+            if scope_user:
+                stmt = stmt.where(RouteModel.allowed_users_ids.contains([scope_user]))
 
         if text_search and text_search.strip() and text_search.lower() != "":
             ts = text_search.strip()

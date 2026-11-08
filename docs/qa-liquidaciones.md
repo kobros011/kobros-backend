@@ -44,3 +44,12 @@ Hallazgo corregido: el historial del cliente en el asistente de crédito traía 
 
 ## QA de alcance por id (`scripts/qa_access.py`, 19/19)
 Crédito y pago pedidos por id respetan marca, rol y ruta asignada: otra marca o un cobrador no asignado reciben 404; el cobrador no edita ni elimina créditos (403); cobrar un pago ajeno se rechaza sin mover dinero; listar pagos sin `loan_id` se rechaza (400).
+
+## QA de seguridad (alcance por marca, rol y ruta)
+
+`scripts/qa_security.py` (73 verificaciones) prueba todos los endpoints que reciben un id con:
+A) administrador de otra marca, B) cobrador no asignado a la ruta, C) cobrador asignado ejecutando acciones de administración.
+Resultado: 73/73. Regresiones: qa_access 19/19, qa_liquidations 50/50, qa_liquidations_flow 60/60, qa_payment_history 31/31, qa_loan_create 90/90, qa_reports 69/69.
+
+Cambios de comportamiento: el cobrador ya no lista usuarios, no activa/desactiva clientes, no crea/edita rutas ni crea/edita/borra pagos manuales;
+`GET /payments/` exige `loan_id` y `GET /clientroute/` exige `route_id`; Cartera/mora excluyen rutas inactivas (igual que el dashboard).

@@ -9,6 +9,7 @@ from ...infrastructure.models.user_model import UserModel
 from ...infrastructure.repositories.brand_repository import BrandRepository
 from ...infrastructure.utils.require_authentication import require_authentication
 from ...infrastructure.utils.require_role import require_role
+from ...infrastructure.utils.access import ensure_brand_access
 from ...use_cases.brand_cases import BrandUseCases
 from ..shemas.brand_shema import BrandRead, BrandUpdate, BrandCreate
 
@@ -33,7 +34,12 @@ def get_brand_usecases(
 
 
 @router.get("/{brand_id}", response_model=Optional[BrandRead])
-async def read_brand(brand_id: UUID, usecases: BrandUseCases = Depends(get_brand_usecases)):
+async def read_brand(
+    brand_id: UUID,
+    usecases: BrandUseCases = Depends(get_brand_usecases),
+    user: UserModel = Depends(require_authentication),
+):
+    ensure_brand_access(brand_id, user)
     return await usecases.get_brand(brand_id)
 
 

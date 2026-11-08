@@ -9,7 +9,8 @@ from ..shemas.payment_shema import PaymentRead, PaymentUpdate, PaymentCreate
 from ...use_cases.payment_cases import PaymentUseCases
 from ...infrastructure.utils.require_authentication import require_authentication, get_current_user
 from ...infrastructure.models.user_model import UserModel
-from ...infrastructure.utils.access import ensure_loan_access, ensure_payment_access
+from ...infrastructure.utils.access import ensure_loan_access, ensure_payment_access, ensure_route_access
+from ...infrastructure.utils.require_role import require_role
 from ...infrastructure.repositories.payment_history_repository import PaymentHistoryRepository
 from ...use_cases.payment_history_cases import PaymentHistoryUseCases
 from ...core.pagination import PaginationParams, pagination_params
@@ -41,8 +42,20 @@ async def list_payments(
     return await usecases.list_payments(loan_id)
 
 @router.get("/full", response_model=List[PaymentFullRead])
-async def list_payments_full(request: Request, usecases: PaymentUseCases = Depends(get_payment_usecases)):
+async def list_payments_full(
+    request: Request,
+    usecases: PaymentUseCases = Depends(get_payment_usecases),
+    db: AsyncSession = Depends(get_db),
+    user: UserModel = Depends(get_current_user),
+):
     filters = dict(request.query_params)
+    if filters.get("route_id"):
+        await ensure_route_access(db, UUID(filters["route_id"]), user)
+    # alcance del usuario: marca (dev libre) y, para socio/cobrador, solo sus rutas asignadas
+    if user.type_user.value != "01":
+        filters["_brand_id"] = user.brand_id
+    if user.type_user.value in ("04", "05"):
+        filters["_assigned_user_id"] = user.id
     return await usecases.list_payments_full(filters)
 
 @router.get("/today", response_model=List[CollectionTodayRead])
@@ -50,7 +63,10 @@ async def get_today_collection(
     route_id: UUID = Query(...),
     date: Optional[str] = Query(None),
     usecases: PaymentUseCases = Depends(get_payment_usecases),
+    db: AsyncSession = Depends(get_db),
+    user: UserModel = Depends(get_current_user),
 ):
+    await ensure_route_access(db, route_id, user)
     collect_date = datetime.strptime(date, "%Y-%m-%d").date() if date else today_bogota()
     return await usecases.get_today_collection(route_id, collect_date)
 
@@ -62,6 +78,7 @@ async def payment_history(
     db: AsyncSession = Depends(get_db),
     user: UserModel = Depends(get_current_user),
 ):
+    await ensure_loan_access(db, loan_id, user)
     return await PaymentHistoryUseCases(PaymentHistoryRepository(db), user).history(loan_id, status, pagination)
 
 @router.get("/{payment_id}", response_model=Optional[PaymentRead])
@@ -75,11 +92,23 @@ async def read_payment(
     return await usecases.get_payment(payment_id)
 
 @router.post("/", response_model=PaymentRead, status_code=status.HTTP_201_CREATED)
-async def create_payment(payment_in: PaymentCreate, usecases: PaymentUseCases = Depends(get_payment_usecases)):
+async def create_payment(
+    payment_in: PaymentCreate,
+    usecases: PaymentUseCases = Depends(get_payment_usecases),
+    user: UserModel = Depends(require_role("01", "02", "03")),
+    db: AsyncSession = Depends(get_db),
+):
+    await ensure_loan_access(db, payment_in.loan_id, user)
     return await usecases.create_payment(payment=payment_in)
 
 @router.put("/{payment_id}", response_model=PaymentRead)
-async def update_payment(payment_in: PaymentUpdate, usecases: PaymentUseCases = Depends(get_payment_usecases)):
+async def update_payment(
+    payment_in: PaymentUpdate,
+    usecases: PaymentUseCases = Depends(get_payment_usecases),
+    user: UserModel = Depends(require_role("01", "02", "03")),
+    db: AsyncSession = Depends(get_db),
+):
+    await ensure_payment_access(db, payment_in.id, user)
     return await usecases.update_payment(payment=payment_in)
 
 @router.put("/{payment_id}/pay")
@@ -94,5 +123,11 @@ async def pay_payment(
     return await usecases.pay_payment(payment_id, value, collected_by=user.id)
 
 @router.delete("/{payment_id}")
-async def delete_payment(payment_id: UUID, usecases: PaymentUseCases = Depends(get_payment_usecases)):
+async def delete_payment(
+    payment_id: UUID,
+    usecases: PaymentUseCases = Depends(get_payment_usecases),
+    user: UserModel = Depends(require_role("01", "02", "03")),
+    db: AsyncSession = Depends(get_db),
+):
+    await ensure_payment_access(db, payment_id, user)
     return await usecases.delete_payment(payment_id)

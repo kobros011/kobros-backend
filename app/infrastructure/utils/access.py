@@ -42,3 +42,56 @@ async def ensure_payment_access(db: AsyncSession, payment_id: UUID, user: UserMo
     if loan_id is None:
         raise NotFoundException("El pago no fue encontrado")
     await ensure_loan_access(db, loan_id, user)
+
+
+# ---- rutas, clientes, marcas, conceptos (mismo criterio: dev libre; resto, su marca; 04/05, rutas asignadas) ----
+
+def _route_visible(route_brand, allowed, user: UserModel) -> bool:
+    role = _role(user)
+    if role != "01" and user.brand_id != route_brand:
+        return False
+    if role in ("04", "05") and user.id not in (allowed or []):
+        return False
+    return True
+
+
+async def ensure_route_access(db: AsyncSession, route_id: UUID, user: UserModel) -> None:
+    row = (await db.execute(select(RouteModel.brand_id, RouteModel.allowed_users_ids).where(RouteModel.id == route_id))).first()
+    if row is None or not _route_visible(row.brand_id, row.allowed_users_ids, user):
+        raise NotFoundException("Ruta no encontrada")
+
+
+async def ensure_client_access(db: AsyncSession, client_id: UUID, user: UserModel) -> None:
+    from app.infrastructure.models.client_model import ClientModel
+    brand_id = (await db.execute(select(ClientModel.brand_id).where(ClientModel.id == client_id))).scalar_one_or_none()
+    role = _role(user)
+    if brand_id is None and (await db.execute(select(ClientModel.id).where(ClientModel.id == client_id))).first() is None:
+        raise NotFoundException("El cliente no fue encontrado")
+    if role != "01" and user.brand_id != brand_id:
+        raise NotFoundException("El cliente no fue encontrado")
+    if role in ("04", "05"):
+        routes = (await db.execute(
+            select(RouteModel.allowed_users_ids).join(ClientRouteModel, ClientRouteModel.route_id == RouteModel.id)
+            .where(ClientRouteModel.cliente_id == client_id)
+        )).scalars().all()
+        if not any(user.id in (allowed or []) for allowed in routes):
+            raise NotFoundException("El cliente no fue encontrado")
+
+
+async def ensure_clientroute_access(db: AsyncSession, client_route_id: UUID, user: UserModel) -> None:
+    route_id = (await db.execute(select(ClientRouteModel.route_id).where(ClientRouteModel.id == client_route_id))).scalar_one_or_none()
+    if route_id is None:
+        raise NotFoundException("Orden del cliente no encontrado")
+    await ensure_route_access(db, route_id, user)
+
+
+def ensure_brand_access(brand_id: UUID, user: UserModel) -> None:
+    if _role(user) != "01" and user.brand_id != brand_id:
+        raise NotFoundException("Marca no encontrada")
+
+
+async def ensure_concept_access(db: AsyncSession, concept_id: UUID, user: UserModel) -> None:
+    from app.infrastructure.models.expense_model import ExpenseConceptModel
+    brand_id = (await db.execute(select(ExpenseConceptModel.brand_id).where(ExpenseConceptModel.id == concept_id))).scalar_one_or_none()
+    if brand_id is None or (_role(user) != "01" and user.brand_id != brand_id):
+        raise NotFoundException("Concepto no encontrado")

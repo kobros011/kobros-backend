@@ -70,13 +70,20 @@ async def list_users(
     request: Request,
     pagination: Optional[PaginationParams] = Depends(optional_pagination_params),
     usecases: UserUseCases = Depends(get_user_usecases),
+    _: UserModel = Depends(require_role(*_ADMIN_ROLES)),
 ):
     users, total = await usecases.list_users(filters_from_request(request), pagination)
     return page_or_list([user_to_read(u) for u in users if u], total, pagination)
 
 
 @router.get("/{user_id}", response_model=UserRead)
-async def read_user(user_id: UUID, usecases: UserUseCases = Depends(get_user_usecases)):
+async def read_user(
+    user_id: UUID,
+    usecases: UserUseCases = Depends(get_user_usecases),
+    current: UserModel = Depends(require_authentication),
+):
+    if current.id != user_id and (current.type_user.value if hasattr(current.type_user, "value") else str(current.type_user)) not in _ADMIN_ROLES:
+        raise HTTPException(status_code=403, detail="Sin permisos suficientes")
     user = await usecases.get_user(user_id)
     return user_to_read(user)
 

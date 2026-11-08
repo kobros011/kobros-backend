@@ -8,7 +8,9 @@ from ...infrastructure.repositories.client_repository import ClientRepository
 from ...use_cases.client_cases import ClientUseCases
 from ..shemas.client_shema import ClientRead, ClientUpdate, ClientCreate, ClientMoreInfoRead
 from ...use_cases.client_cases import ClientUseCases
-from ...infrastructure.utils.require_authentication import require_authentication
+from ...infrastructure.utils.require_authentication import require_authentication, get_current_user
+from ...infrastructure.utils.require_role import require_role
+from ...infrastructure.utils.access import ensure_client_access, ensure_route_access
 from app.infrastructure.models.user_model import UserModel
 
 
@@ -24,10 +26,25 @@ def get_client_usecases(user: UserModel = Depends(require_authentication), repos
     return usecases
 
 @router.get("/{client_id}", response_model=Optional[ClientRead])
-async def read_client(client_id: UUID, usecases: ClientUseCases = Depends(get_client_usecases)):
+async def read_client(
+    client_id: UUID,
+    usecases: ClientUseCases = Depends(get_client_usecases),
+    db: AsyncSession = Depends(get_db),
+    user: UserModel = Depends(get_current_user),
+):
+    await ensure_client_access(db, client_id, user)
     return await usecases.get_client(client_id)
 @router.get("/{client_id}/more_info/", response_model=Optional[ClientMoreInfoRead])
-async def read_client(client_id: UUID, route_id: Optional[UUID] = Query(None), usecases: ClientUseCases = Depends(get_client_usecases)):
+async def read_client_more_info(
+    client_id: UUID,
+    route_id: Optional[UUID] = Query(None),
+    usecases: ClientUseCases = Depends(get_client_usecases),
+    db: AsyncSession = Depends(get_db),
+    user: UserModel = Depends(get_current_user),
+):
+    await ensure_client_access(db, client_id, user)
+    if route_id:
+        await ensure_route_access(db, route_id, user)
     return await usecases.get_client_more_info(client_id, route_id)
 
 @router.get("/", response_model=Union[Page[ClientRead], List[ClientRead]])
@@ -43,9 +60,21 @@ async def create_client(client_in: ClientCreate, usecases: ClientUseCases = Depe
     return await usecases.create_client(client=client_in)
 
 @router.put("/{client_id}", response_model=ClientRead)
-async def update_client(client_in: ClientUpdate, usecases: ClientUseCases = Depends(get_client_usecases)):
+async def update_client(
+    client_in: ClientUpdate,
+    usecases: ClientUseCases = Depends(get_client_usecases),
+    db: AsyncSession = Depends(get_db),
+    user: UserModel = Depends(get_current_user),
+):
+    await ensure_client_access(db, client_in.id, user)
     return await usecases.update_client(client=client_in)
 
 @router.put("/{client_id}/toggle")
-async def toggle_client(client_id: UUID, usecases: ClientUseCases = Depends(get_client_usecases)):
+async def toggle_client(
+    client_id: UUID,
+    usecases: ClientUseCases = Depends(get_client_usecases),
+    user: UserModel = Depends(require_role("01", "02", "03")),
+    db: AsyncSession = Depends(get_db),
+):
+    await ensure_client_access(db, client_id, user)
     return await usecases.toggle_client(client_id)
