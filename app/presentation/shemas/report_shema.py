@@ -27,9 +27,12 @@ class DelinquencyItemRead(BaseModel):
     route_name: str
     value_total_loan: float
     total_paid: float
-    balance: float
+    balance: float  # saldo en mora = suma de las cuotas vencidas impagas
     end_date: date
     days_overdue: int
+    loan_balance: float
+    overdue_quotas: int
+    overdue_since: date
 
 
 class PaymentHistoryItemRead(BaseModel):
@@ -42,3 +45,8 @@ class PaymentHistoryItemRead(BaseModel):
     value: float
     applied: float
     status: str
+
+
+class ReportSummaryRead(BaseModel):
+    total_balance: float
+    count: int

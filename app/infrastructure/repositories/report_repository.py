@@ -1,151 +1,126 @@
 from uuid import UUID
-from datetime import date as date_type
-from typing import List, Optional
+from datetime import date
+from typing import List, Optional, Sequence, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy import func
+from sqlalchemy.sql import Select
+from sqlalchemy import func, cast, String
 
 from ..models.payment_model import PaymentModel
 from ..models.loan_model import LoanModel
 from ..models.client_route_model import ClientRouteModel
 from ..models.client_model import ClientModel
 from ..models.route_model import RouteModel
+from .loan_stats import build_loan_stats
+from app.core.clock import today_bogota
+from app.core.pagination import PaginationParams, paginate_mappings
 
 
 class ReportRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_portfolio(
+    def _stmt(
         self,
-        route_id: Optional[UUID] = None,
-        brand_id: Optional[UUID] = None,
-    ) -> List[dict]:
-        paid_sub = (
-            select(
-                PaymentModel.loan_id,
-                func.coalesce(func.sum(PaymentModel.applied), 0).label("total_paid"),
-            )
-            .where(PaymentModel.status == "PAGADO")
-            .group_by(PaymentModel.loan_id)
-            .subquery()
-        )
+        route_ids: Optional[Sequence[UUID]],
+        brand_id: Optional[UUID],
+        text: Optional[str],
+        *,
+        delinquency: bool,
+        today: date,
+    ) -> Select:
+        """Cartera (créditos activos con saldo) o mora (con cuotas vencidas impagas), ambas sobre `loan_stats`
+        para que Cartera, Cartera en mora y el Dashboard usen siempre las mismas cifras."""
+        stats = build_loan_stats(today)
+
+        columns = [
+            ClientModel.id.label("client_id"),
+            ClientModel.full_name.label("client_name"),
+            LoanModel.id.label("loan_id"),
+            LoanModel.loan_number,
+            RouteModel.id.label("route_id"),
+            RouteModel.name.label("route_name"),
+            stats.c.value_total_loan,
+            stats.c.paid.label("total_paid"),
+            LoanModel.end_date,
+        ]
+        if delinquency:
+            columns += [
+                stats.c.overdue_amount.label("balance"),
+                stats.c.balance.label("loan_balance"),
+                stats.c.overdue_quotas,
+                stats.c.overdue_since,
+                stats.c.days_overdue,
+            ]
+        else:
+            columns += [stats.c.balance.label("balance"), LoanModel.payment_method]
 
         stmt = (
-            select(
-                ClientModel.id.label("client_id"),
-                ClientModel.full_name.label("client_name"),
-                LoanModel.id.label("loan_id"),
-                LoanModel.loan_number,
-                RouteModel.id.label("route_id"),
-                RouteModel.name.label("route_name"),
-                LoanModel.value_total_loan,
-                func.coalesce(paid_sub.c.total_paid, 0).label("total_paid"),
-                LoanModel.end_date,
-                LoanModel.payment_method,
-            )
+            select(*columns)
             .select_from(LoanModel)
+            .join(stats, stats.c.loan_id == LoanModel.id)
             .join(ClientRouteModel, LoanModel.clientroute_id == ClientRouteModel.id)
             .join(ClientModel, ClientRouteModel.cliente_id == ClientModel.id)
             .join(RouteModel, ClientRouteModel.route_id == RouteModel.id)
-            .outerjoin(paid_sub, paid_sub.c.loan_id == LoanModel.id)
             .where(LoanModel.active == True)
         )
+        stmt = stmt.where(stats.c.overdue_amount > 0) if delinquency else stmt.where(stats.c.balance > 0)
 
-        if route_id:
-            stmt = stmt.where(RouteModel.id == route_id)
+        if route_ids is not None:
+            stmt = stmt.where(RouteModel.id.in_(route_ids))
         if brand_id:
             stmt = stmt.where(ClientModel.brand_id == brand_id)
+        if text:
+            like = f"%{text.strip()}%"
+            stmt = stmt.where(ClientModel.full_name.ilike(like) | cast(LoanModel.loan_number, String).ilike(like))
 
-        result = await self.db.execute(stmt)
-        rows = result.mappings().all()
+        if delinquency:
+            return stmt.order_by(stats.c.days_overdue.desc(), LoanModel.id)
+        return stmt.order_by(stats.c.balance.desc(), LoanModel.id)
 
-        items = []
-        for r in rows:
-            balance = float(r["value_total_loan"]) - float(r["total_paid"])
-            if balance <= 0:
-                continue
-            items.append({
-                "client_id": r["client_id"],
-                "client_name": r["client_name"],
-                "loan_id": r["loan_id"],
-                "loan_number": r["loan_number"],
-                "route_id": r["route_id"],
-                "route_name": r["route_name"],
-                "value_total_loan": float(r["value_total_loan"]),
-                "total_paid": float(r["total_paid"]),
-                "balance": round(balance, 2),
-                "end_date": r["end_date"],
-                "payment_method": r["payment_method"],
-            })
-        return items
+    @staticmethod
+    def _round_row(row: dict) -> dict:
+        row = dict(row)
+        for key in ("value_total_loan", "total_paid", "balance", "loan_balance"):
+            if key in row and row[key] is not None:
+                row[key] = round(float(row[key]), 2)
+        return row
 
-    async def get_delinquency(
+    async def list_portfolio(
         self,
-        route_id: Optional[UUID] = None,
-        brand_id: Optional[UUID] = None,
-    ) -> List[dict]:
-        today = date_type.today()
+        route_ids: Optional[Sequence[UUID]],
+        brand_id: Optional[UUID],
+        text: Optional[str],
+        params: Optional[PaginationParams],
+    ) -> Tuple[List[dict], int]:
+        stmt = self._stmt(route_ids, brand_id, text, delinquency=False, today=today_bogota())
+        rows, total = await paginate_mappings(self.db, stmt, params)
+        return [self._round_row(r) for r in rows], total
 
-        paid_sub = (
-            select(
-                PaymentModel.loan_id,
-                func.coalesce(func.sum(PaymentModel.applied), 0).label("total_paid"),
-            )
-            .where(PaymentModel.status == "PAGADO")
-            .group_by(PaymentModel.loan_id)
-            .subquery()
-        )
+    async def list_delinquency(
+        self,
+        route_ids: Optional[Sequence[UUID]],
+        brand_id: Optional[UUID],
+        text: Optional[str],
+        params: Optional[PaginationParams],
+    ) -> Tuple[List[dict], int]:
+        stmt = self._stmt(route_ids, brand_id, text, delinquency=True, today=today_bogota())
+        rows, total = await paginate_mappings(self.db, stmt, params)
+        return [self._round_row(r) for r in rows], total
 
-        stmt = (
-            select(
-                ClientModel.id.label("client_id"),
-                ClientModel.full_name.label("client_name"),
-                LoanModel.id.label("loan_id"),
-                LoanModel.loan_number,
-                RouteModel.id.label("route_id"),
-                RouteModel.name.label("route_name"),
-                LoanModel.value_total_loan,
-                func.coalesce(paid_sub.c.total_paid, 0).label("total_paid"),
-                LoanModel.end_date,
-            )
-            .select_from(LoanModel)
-            .join(ClientRouteModel, LoanModel.clientroute_id == ClientRouteModel.id)
-            .join(ClientModel, ClientRouteModel.cliente_id == ClientModel.id)
-            .join(RouteModel, ClientRouteModel.route_id == RouteModel.id)
-            .outerjoin(paid_sub, paid_sub.c.loan_id == LoanModel.id)
-            .where(LoanModel.active == True)
-            .where(LoanModel.end_date < today)
-        )
+    async def _summary(self, route_ids, brand_id, text, *, delinquency: bool) -> dict:
+        stmt = self._stmt(route_ids, brand_id, text, delinquency=delinquency, today=today_bogota()).order_by(None)
+        sub = stmt.subquery()
+        total_balance, count = (
+            await self.db.execute(select(func.coalesce(func.sum(sub.c.balance), 0), func.count()).select_from(sub))
+        ).one()
+        return {"total_balance": round(float(total_balance), 2), "count": count}
 
-        if route_id:
-            stmt = stmt.where(RouteModel.id == route_id)
-        if brand_id:
-            stmt = stmt.where(ClientModel.brand_id == brand_id)
+    async def portfolio_summary(self, route_ids: Optional[Sequence[UUID]], brand_id: Optional[UUID], text: Optional[str]) -> dict:
+        return await self._summary(route_ids, brand_id, text, delinquency=False)
 
-        result = await self.db.execute(stmt)
-        rows = result.mappings().all()
-
-        items = []
-        for r in rows:
-            balance = float(r["value_total_loan"]) - float(r["total_paid"])
-            if balance <= 0:
-                continue
-            days_overdue = (today - r["end_date"]).days
-            items.append({
-                "client_id": r["client_id"],
-                "client_name": r["client_name"],
-                "loan_id": r["loan_id"],
-                "loan_number": r["loan_number"],
-                "route_id": r["route_id"],
-                "route_name": r["route_name"],
-                "value_total_loan": float(r["value_total_loan"]),
-                "total_paid": float(r["total_paid"]),
-                "balance": round(balance, 2),
-                "end_date": r["end_date"],
-                "days_overdue": days_overdue,
-            })
-        return items
+    async def delinquency_summary(self, route_ids: Optional[Sequence[UUID]], brand_id: Optional[UUID], text: Optional[str]) -> dict:
+        return await self._summary(route_ids, brand_id, text, delinquency=True)
 
     async def get_client_payment_history(self, client_id: UUID) -> List[dict]:
         stmt = (
@@ -164,23 +139,7 @@ class ReportRepository:
             .join(LoanModel, PaymentModel.loan_id == LoanModel.id)
             .join(ClientRouteModel, LoanModel.clientroute_id == ClientRouteModel.id)
             .where(ClientRouteModel.cliente_id == client_id)
-            .order_by(PaymentModel.pay_date.asc(), LoanModel.loan_number.asc(), PaymentModel.quota_number.asc())
+            .order_by(PaymentModel.pay_date.desc(), PaymentModel.quota_number.desc())
         )
-
-        result = await self.db.execute(stmt)
-        rows = result.mappings().all()
-
-        return [
-            {
-                "payment_id": r["payment_id"],
-                "loan_id": r["loan_id"],
-                "loan_number": r["loan_number"],
-                "quota_number": r["quota_number"],
-                "pay_date": r["pay_date"],
-                "payment_date": r["payment_date"],
-                "value": float(r["value"]),
-                "applied": float(r["applied"]),
-                "status": r["status"],
-            }
-            for r in rows
-        ]
+        rows = (await self.db.execute(stmt)).mappings().all()
+        return [dict(row) for row in rows]
