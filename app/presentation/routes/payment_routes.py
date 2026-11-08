@@ -14,7 +14,8 @@ from ...use_cases.payment_history_cases import PaymentHistoryUseCases
 from ...core.pagination import PaginationParams, pagination_params
 from ..shemas.payment_history_shema import PaymentHistoryPage
 from ..shemas.payment_shema import PaymentFilters, PaymentFullRead, CollectionTodayRead
-from datetime import datetime, date as date_type
+from datetime import datetime
+from ...core.clock import today_bogota
 
 router = APIRouter(dependencies=[Depends(require_authentication)])
 
@@ -40,7 +41,7 @@ async def get_today_collection(
     date: Optional[str] = Query(None),
     usecases: PaymentUseCases = Depends(get_payment_usecases),
 ):
-    collect_date = datetime.strptime(date, "%Y-%m-%d").date() if date else date_type.today()
+    collect_date = datetime.strptime(date, "%Y-%m-%d").date() if date else today_bogota()
     return await usecases.get_today_collection(route_id, collect_date)
 
 @router.get("/history", response_model=PaymentHistoryPage)

@@ -124,6 +124,7 @@ class AbstractPaymentRepository(ABC):
             client_address=model.loan.clientroute.client.current_address,
             client_mobile=model.loan.clientroute.client.current_mobile,
             loan_number=model.loan.loan_number,
+            client_beak=float(model.loan.clientroute.client.beak or 0),
         )
 
     @staticmethod

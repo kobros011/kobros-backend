@@ -12,7 +12,7 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql+asyncpg://root:admin@db:5432/cobros"
 )
 
-engine = create_async_engine(DATABASE_URL, echo=True)
+engine = create_async_engine(DATABASE_URL, echo=os.getenv("SQL_ECHO", "0") == "1")
 
 async_session = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 

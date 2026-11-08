@@ -44,6 +44,7 @@ class PaymentHistoryRepository:
             "overdue": overdue,
             "status": case((paid, "pagado"), (overdue, "mora"), else_="pendiente"),
             "balance": func.greatest(value - applied, 0),
+            "excess": func.greatest(applied - value, 0),
             "days_overdue": case((overdue, (today_date - PaymentModel.pay_date).cast(Integer)), else_=0),
             "paid_late_days": case(
                 (and_(paid, PaymentModel.payment_date.isnot(None)),
@@ -86,6 +87,7 @@ class PaymentHistoryRepository:
                 e["value"].label("value"),
                 e["applied"].label("applied"),
                 e["balance"].label("balance"),
+                e["excess"].label("excess"),
                 e["status"].label("status"),
                 e["days_overdue"].label("days_overdue"),
                 e["paid_late_days"].label("paid_late_days"),

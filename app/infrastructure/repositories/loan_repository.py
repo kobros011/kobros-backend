@@ -1,24 +1,42 @@
 from uuid import UUID
 from ...domain.entities.loan import Loan
 from ...domain.repositories.loan_repository import AbstractLoanRepository
-from sqlalchemy import select, or_, and_
+from sqlalchemy import select, or_, and_, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from typing import Optional, List
 from ..models.loan_model import LoanModel
+from ..models.payment_model import PaymentModel
 from ..models.client_route_model import ClientRouteModel
 from ..models.client_model import ClientModel
 from ...presentation.shemas.loan_shema import LoanUpdate, LoanCreate, LoansFilters
-from ...presentation.shemas.client_shema import ClientUpdate
 from ..utils.validator_errors import ValidatorErrors
 from ...core.exceptions import ConflictException, NotFoundException
 from ...core.pagination import PaginationParams, paginate_or_all
 from .client_route_repository import ClientRouteRepository
-from .client_repository import ClientRepository
 from .payment_repository import PaymentRepository
 from .route_repository import RouteRepository
-from datetime import datetime
+from datetime import date, datetime
+from types import SimpleNamespace
+from uuid import uuid4
+import pytz
+from ...core.clock import today_bogota
+from ...core.exceptions import BadRequestException, ForbiddenException
+from ..models.route_model import RouteModel
+from ..models.user_model import UserModel
+from ..utils.Emun import PaymentStatus
+from ..utils.payment_math import apply_payment_to_quota
+from ..utils.timedelta_pay_date import build_payment_schedule
+
+_BOGOTA = pytz.timezone("America/Bogota")
+
+
+def _to_bogota_date(value: datetime) -> date:
+    """Fecha calendario en Colombia: el front envía ISO en UTC y desde las 19:00 ya sería el día siguiente."""
+    if value.tzinfo is not None:
+        value = value.astimezone(_BOGOTA)
+    return value.date()
 
 class LoanRepository(AbstractLoanRepository):
     def __init__(self, db: AsyncSession):
@@ -47,7 +65,14 @@ class LoanRepository(AbstractLoanRepository):
             if not model:
                 raise NotFoundException("Préstamo no encontrado")
             
-            return self.model_to_entity_full(model)
+
+            entity = self.model_to_entity_full(model)
+            # Mismas definiciones que Reportes/Cartera (loan_stats): pagado = Σ applied, saldo = total − pagado.
+            entity.paid = float((await self.db.execute(
+                select(func.coalesce(func.sum(PaymentModel.applied), 0)).where(PaymentModel.loan_id == loan_id)
+            )).scalar_one())
+            entity.balance = float(model.value_total_loan or 0) - entity.paid
+            return entity
         except IntegrityError as e:
             user_message = ValidatorErrors.integrity_error(e)
             raise ConflictException(user_message)
@@ -129,30 +154,99 @@ class LoanRepository(AbstractLoanRepository):
             user_message = ValidatorErrors.integrity_error(e)
             raise ConflictException(user_message)
 
-    async def create_loan(self, loan: LoanCreate) -> Optional[Loan]:
+    async def create_loan(self, loan: LoanCreate, user: UserModel) -> Optional[Loan]:
+        """Crea el crédito y todas sus cuotas en UNA transacción (un solo commit, inserción en lote).
+
+        El servidor es la fuente de verdad de los cálculos y del número de crédito; el cobro inicial
+        (`value_payment`) se aplica a la cuota 1 con la misma regla que un abono.
+        """
         try:
+            today = today_bogota()
+            first_date = _to_bogota_date(loan.date_first_quota)
+            schedule = build_payment_schedule(first_date, loan.payment_method, loan.agreed_quotas, loan.fixed_payment_day)
+            if loan.value_payment and schedule[0] > today:
+                raise BadRequestException(
+                    f"La primera cuota vence el {schedule[0]:%d/%m/%Y}: no se puede registrar un cobro inicial antes de esa fecha")
+
+            # Una consulta: cliente-ruta + ruta (bloqueada para numerar sin carreras) + cliente.
+            row = (await self.db.execute(
+                select(ClientRouteModel, RouteModel, ClientModel)
+                .join(RouteModel, RouteModel.id == ClientRouteModel.route_id)
+                .join(ClientModel, ClientModel.id == ClientRouteModel.cliente_id)
+                .where(ClientRouteModel.id == loan.clientroute_id)
+                .with_for_update(of=RouteModel)
+            )).first()
+            if row is None:
+                raise NotFoundException("Orden del cliente no encontrado")
+            client_route, route, client = row
+            self._authorize(user, route, client_route, loan.client_id)
+
             if loan.new_order:
-                await ClientRouteRepository.update_multiples_orders(self=self, current_client_route_id=loan.clientroute_id, new_order=loan.new_order)
+                await ClientRouteRepository.update_multiples_orders(
+                    self=self, current_client_route_id=loan.clientroute_id, new_order=loan.new_order, commit=False)
+            client.current_address = loan.current_address
+            client.current_mobile = loan.current_mobile
 
-            await ClientRepository.update_client(self=ClientRepository(self.db), client=ClientUpdate(id=loan.client_id, current_address=loan.current_address, current_mobile=loan.current_mobile))
-
-            orm_loan = self.entity_to_model(Loan(**loan.model_dump(exclude=["current_address", "current_mobile", "client_id", "new_order"]), pending_quotas=loan.agreed_quotas))
-
+            total = round(loan.value_quota_fixed * loan.agreed_quotas, 2)
+            utility = round(total - loan.value_capital, 2)
+            route.loans_number = int(route.loans_number or 0) + 1
+            orm_loan = LoanModel(
+                loan_number=route.loans_number,
+                initial_date=_to_bogota_date(loan.initial_date),
+                end_date=schedule[-1],
+                date_first_quota=first_date,
+                value_quota_fixed=loan.value_quota_fixed,
+                agreed_quotas=loan.agreed_quotas,
+                payment_method=loan.payment_method,
+                fixed_payment_day=loan.fixed_payment_day,
+                value_capital=loan.value_capital,
+                value_utility_loan=utility,
+                value_total_loan=total,
+                interest_rate=round(utility / loan.value_capital * 100, 4),
+                pending_quotas=loan.agreed_quotas,
+                canceled_quotas=0,
+                total_default=0,
+                clientroute_id=loan.clientroute_id,
+            )
             self.db.add(orm_loan)
+            await self.db.flush()
+
+            rows = [
+                {
+                    "id": uuid4(), "loan_id": orm_loan.id, "quota_number": i + 1, "pay_date": pay_date,
+                    "value": loan.value_quota_fixed, "credit_value": total, "status": PaymentStatus.pending.value, "active": True,
+                    # Mismas columnas en todas las filas: así el INSERT va en una sola sentencia.
+                    "applied": None, "payment_date": None, "collected_by": None,
+                }
+                for i, pay_date in enumerate(schedule)
+            ]
+            if loan.value_payment:
+                first = SimpleNamespace(**rows[0])
+                apply_payment_to_quota(first, orm_loan, client, loan.value_payment, today, user.id)
+                rows[0] = dict(vars(first))
+            await PaymentRepository(self.db).bulk_create_payments(rows)
+
             await self.db.commit()
-            await self.db.refresh(orm_loan)
-
-            client_route = await ClientRouteRepository.get_client_route_by_id(self=ClientRouteRepository(self.db), client_route_id=loan.clientroute_id)
-            await RouteRepository.update_loan_number(self=RouteRepository(self.db), route_id=getattr(client_route, 'route_id'), new_loan_number=loan.loan_number)
-
-            await PaymentRepository.create_multiple_payments(self=PaymentRepository(self.db), loan=loan, loan_id=orm_loan.id)
-
+            await self.db.refresh(orm_loan)  # created_at/updated_at los pone la BD
             return self.model_to_entity(orm_loan)
         except IntegrityError as e:
             await self.db.rollback()
-
             user_message = ValidatorErrors.integrity_error(e)
             raise ConflictException(user_message)
+        except Exception:
+            await self.db.rollback()
+            raise
+
+    @staticmethod
+    def _authorize(user: UserModel, route: RouteModel, client_route: ClientRouteModel, client_id: UUID) -> None:
+        """Marca del usuario = marca de la ruta (dev sin restricción); socio/recaudador solo en rutas donde están asignados."""
+        if client_route.cliente_id != client_id:
+            raise BadRequestException("El cliente no pertenece a esa ruta")
+        role = user.type_user.value if hasattr(user.type_user, "value") else str(user.type_user)
+        if role != "01" and user.brand_id != route.brand_id:
+            raise NotFoundException("Orden del cliente no encontrado")
+        if role in ("04", "05") and user.id not in (route.allowed_users_ids or []):
+            raise ForbiddenException("No tienes asignada esta ruta")
 
     async def update_loan(self, loan: LoanUpdate) -> Optional[Loan]:
         try:

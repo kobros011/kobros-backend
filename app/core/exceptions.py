@@ -19,3 +19,9 @@ class BadRequestException(AppException):
     """Excepción para solicitudes que no cumplen una regla de negocio."""
     def __init__(self, message: str = "Solicitud inválida"):
         super().__init__(message, status_code=400)
+
+
+class ForbiddenException(AppException):
+    """Excepción para acciones no permitidas al usuario sobre un recurso."""
+    def __init__(self, message: str = "No tienes permisos para esta acción"):
+        super().__init__(message, status_code=403)

@@ -34,3 +34,5 @@ class LoanFull(Loan):
     route_name: str = ""
     route_id: UUID = None
     order: int = 0
+    paid: Optional[float] = None
+    balance: Optional[float] = None

@@ -9,6 +9,8 @@ from ...use_cases.loan_cases import LoanUseCases
 from ..shemas.loan_shema import LoanRead, LoanUpdate, LoanCreate, LoanReadFull
 from ...use_cases.loan_cases import LoanUseCases
 from ...infrastructure.utils.require_authentication import require_authentication
+from ...infrastructure.utils.require_role import require_role
+from ...infrastructure.models.user_model import UserModel
 
 router = APIRouter(dependencies=[Depends(require_authentication)])
 
@@ -31,8 +33,12 @@ async def list_loans(
     return await usecases.list_loans(filters_from_request(request), pagination)
 
 @router.post("/", response_model=LoanRead, status_code=status.HTTP_201_CREATED)
-async def create_loan(loan_in: LoanCreate, usecases: LoanUseCases = Depends(get_loan_usecases)):
-    return await usecases.create_loan(loan=loan_in)
+async def create_loan(
+    loan_in: LoanCreate,
+    usecases: LoanUseCases = Depends(get_loan_usecases),
+    user: UserModel = Depends(require_role("01", "02", "03", "04", "05")),
+):
+    return await usecases.create_loan(loan=loan_in, user=user)
 
 @router.put("/{loan_id}", response_model=LoanRead)
 async def update_loan(loan_in: LoanUpdate, usecases: LoanUseCases = Depends(get_loan_usecases)):

@@ -16,8 +16,8 @@ class LoanUseCases:
         items, total = await self.repository.list_loans(filters, params)
         return page_or_list(items, total, params)
     
-    async def create_loan(self, loan: LoanCreate) -> Optional[Loan]:
-        return await self.repository.create_loan(loan)
+    async def create_loan(self, loan: LoanCreate, user) -> Optional[Loan]:
+        return await self.repository.create_loan(loan, user)
     
     async def update_loan(self, loan: LoanUpdate) -> Optional[Loan]:
         return await self.repository.update_loan(loan)

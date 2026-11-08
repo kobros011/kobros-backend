@@ -17,7 +17,7 @@ class AbstractLoanRepository(ABC):
         pass
 
     @abstractmethod
-    async def create_loan(self, loan: LoanCreate) -> Optional[Loan]:
+    async def create_loan(self, loan: LoanCreate, user) -> Optional[Loan]:
         pass
 
     @abstractmethod
@@ -44,6 +44,9 @@ class AbstractLoanRepository(ABC):
             value_utility_loan=model.value_utility_loan,
             value_total_loan=model.value_total_loan,
             interest_rate=model.interest_rate,
+            pending_quotas=model.pending_quotas,
+            canceled_quotas=model.canceled_quotas,
+            total_default=model.total_default,
             clientroute_id=model.clientroute_id,
             active=model.active,
             created_at=model.created_at,

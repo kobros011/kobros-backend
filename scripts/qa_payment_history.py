@@ -26,6 +26,8 @@ from sqlalchemy import func, select  # noqa: E402
 from app.core.clock import today_bogota  # noqa: E402
 from app.infrastructure.dababase.db import async_session  # noqa: E402
 from app.infrastructure.models.brand_model import BrandModel  # noqa: E402
+from app.infrastructure.models.client_model import ClientModel  # noqa: E402
+from app.infrastructure.models.client_route_model import ClientRouteModel  # noqa: E402
 from app.infrastructure.models.loan_model import LoanModel  # noqa: E402
 from app.infrastructure.models.payment_model import PaymentModel  # noqa: E402
 from app.infrastructure.models.user_model import UserModel  # noqa: E402
@@ -40,7 +42,7 @@ def expected_item(p: PaymentModel, today: date, names: dict) -> dict:
     return {
         "id": str(p.id), "quota_number": p.quota_number, "pay_date": p.pay_date.isoformat(),
         "payment_date": p.payment_date.isoformat() if p.payment_date else None,
-        "value": value, "applied": applied, "balance": max(value - applied, 0.0),
+        "value": value, "applied": applied, "balance": max(value - applied, 0.0), "excess": max(applied - value, 0.0),
         "status": "pagado" if paid else ("mora" if overdue else "pendiente"),
         "days_overdue": (today - p.pay_date).days if overdue else 0,
         "paid_late_days": max((p.payment_date - p.pay_date).days, 0) if paid and p.payment_date else 0,
@@ -78,7 +80,9 @@ async def main(mutate: bool) -> int:
         sup = users["super_norte"]
         other = next((u for u in users.values() if u.brand_id and u.brand_id != norte.id and u.type_user.value != "01"), None)
         loans = (await db.execute(
-            select(LoanModel).where(LoanModel.loan_number.between(2001, 2012)).order_by(LoanModel.loan_number)
+            select(LoanModel).join(ClientRouteModel, ClientRouteModel.id == LoanModel.clientroute_id)
+            .join(ClientModel, ClientModel.id == ClientRouteModel.cliente_id)
+            .where(LoanModel.loan_number.between(2001, 2012), ClientModel.id_document.like("QD-1%")).order_by(LoanModel.loan_number)
         )).scalars().all()
 
     print("== 1. Historial por crédito vs cálculo independiente ==")
@@ -131,7 +135,9 @@ async def mutations(api: Api, sup: UserModel, today: date) -> None:
     async with async_session() as db:
         due = (await db.execute(
             select(PaymentModel).join(LoanModel, LoanModel.id == PaymentModel.loan_id)
-            .where(LoanModel.loan_number.between(2001, 2012), LoanModel.active.is_(True),
+            .join(ClientRouteModel, ClientRouteModel.id == LoanModel.clientroute_id)
+            .join(ClientModel, ClientModel.id == ClientRouteModel.cliente_id)
+            .where(LoanModel.loan_number.between(2001, 2012), ClientModel.id_document.like("QD-1%"), LoanModel.active.is_(True),
                    PaymentModel.pay_date <= today, func.coalesce(PaymentModel.applied, 0) == 0)
             .order_by(PaymentModel.pay_date.desc(), PaymentModel.quota_number)
         )).scalars().first()

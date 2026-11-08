@@ -130,7 +130,7 @@ class ClientRouteRepository(AbstractClientRouteRepository):
             client_route_message = ValidatorErrors.integrity_error(e)
             raise ConflictException(client_route_message)
 
-    async def update_multiples_orders(self, current_client_route_id: UUID, new_order: int):
+    async def update_multiples_orders(self, current_client_route_id: UUID, new_order: int, commit: bool = True):
         try:
             current_client_route = await self.db.execute(select(ClientRouteModel).where(ClientRouteModel.id == current_client_route_id))
             current_client_route = current_client_route.scalars().first()
@@ -168,7 +168,8 @@ class ClientRouteRepository(AbstractClientRouteRepository):
 
             current_client_route.order = new_order
 
-            await self.db.commit()
+            if commit:
+                await self.db.commit()
             return current_client_route
         except IntegrityError as e:
             await self.db.rollback()

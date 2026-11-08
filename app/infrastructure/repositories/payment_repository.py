@@ -5,18 +5,17 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 from sqlalchemy.orm import selectinload
-from sqlalchemy import and_, or_, select, asc, func
+from sqlalchemy import and_, or_, select, asc, func, insert
 from ..models.payment_model import PaymentModel
 from ..models.loan_model import LoanModel
 from ..models.client_model import ClientRouteModel
 from ..models.client_model import ClientModel
 from ...presentation.shemas.payment_shema import PaymentUpdate
-from ...presentation.shemas.loan_shema import LoanCreate
 from ..utils.validator_errors import ValidatorErrors
 from ...core.exceptions import BadRequestException, ConflictException, NotFoundException
 from ...core.clock import today_bogota
-from ..utils.timedelta_pay_date import timedelta_pay_date, add_months
-from ..utils.Emun import PaymentStatus, PaymentMethod
+from ..utils.payment_math import apply_payment_to_quota
+from ..utils.Emun import PaymentStatus
 from ...presentation.shemas.payment_shema import PaymentFullRead, PaymentFilters, CollectionTodayRead
 from datetime import date, datetime
 import pytz
@@ -191,37 +190,10 @@ class PaymentRepository(AbstractPaymentRepository):
             user_message = ValidatorErrors.integrity_error(e)
             raise ConflictException(user_message)
 
-    async def create_multiple_payments(self, loan_id: UUID, loan: LoanCreate) -> List[Payment]:
-        try:
-            for i in range(loan.agreed_quotas):
-                if loan.payment_method == PaymentMethod.MONTHLY.value:
-                    pay_date = add_months(dt=loan.date_first_quota, months=i)
-                elif loan.payment_method == PaymentMethod.FIXED_DATE.value:
-                    base = add_months(dt=loan.date_first_quota, months=i)
-                    import calendar as _cal
-                    last_day = _cal.monthrange(base.year, base.month)[1]
-                    pay_date = base.replace(day=min(loan.fixed_payment_day, last_day))
-                else:
-                    pay_date = loan.date_first_quota + timedelta_pay_date(current=i, payment_method=loan.payment_method)
-                payment = Payment(
-                    value=loan.value_quota_fixed,
-                    pay_date= pay_date,
-                    quota_number=i+1,
-                    credit_value=loan.value_total_loan,
-                    status=PaymentStatus.pending.value,
-                    loan_id=loan_id
-                )
-
-                orm_payment = self.entity_to_model(payment)
-                self.db.add(orm_payment)
-            
-            await self.db.commit()
-
-            return True
-        except IntegrityError as e:
-            await self.db.rollback()
-            user_message = ValidatorErrors.integrity_error(e)
-            raise ConflictException(user_message)
+    async def bulk_create_payments(self, rows: List[dict]) -> None:
+        """Inserta todas las cuotas en una sola sentencia. No hace commit: lo decide el llamador (transacción del crédito)."""
+        if rows:
+            await self.db.execute(insert(PaymentModel), rows)
 
     async def update_payment(self, payment: PaymentUpdate) -> Optional[Payment]:
         try:
@@ -279,34 +251,7 @@ class PaymentRepository(AbstractPaymentRepository):
                 raise BadRequestException("La cuota aún no vence, no se puede abonar")
             if applied >= float(current_payment.value or 0) - 0.01:
                 raise BadRequestException("La cuota ya está pagada")
-            value_quota_fixed = float(loan.value_quota_fixed or 0)
-
-            ## Se restan los valores aplicados anteriormente
-            if applied > 0:
-                if applied < value_quota_fixed:
-                    total_default_applied = value_quota_fixed - applied
-                    loan.total_default = float(loan.total_default or 0) - total_default_applied
-
-                if applied > loan.value_quota_fixed:
-                    beak_applied_client = applied - value_quota_fixed
-                    client.beak = float(client.beak or 0) - beak_applied_client
-
-            current_payment.payment_date = datetime.now(bogota_tz).date()
-            loan.canceled_quotas = current_payment.quota_number
-            loan.pending_quotas = (loan.agreed_quotas or 0) - current_payment.quota_number
-
-            if value < value_quota_fixed:
-                total_default = value_quota_fixed - value
-                loan.total_default = float(loan.total_default or 0) + total_default
-                current_payment.status = PaymentStatus.default.value
-            else:
-                current_payment.status = PaymentStatus.paid.value
-
-                if value > value_quota_fixed:
-                    client.beak = value - value_quota_fixed
-            
-            current_payment.applied = value
-            current_payment.collected_by = collected_by
+            apply_payment_to_quota(current_payment, loan, client, value, today_bogota(), collected_by)
 
             await self.db.commit()
 

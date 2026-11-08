@@ -4,6 +4,7 @@ from app.presentation.routes import user_routes, auth_routes, brand_routes, clie
 from app.infrastructure.utils.lifespan import lifespan
 from app.core.exceptions import AppException
 from app.core.logger import logger
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -40,7 +41,8 @@ async def app_exception_handler(request: Request, exc: AppException):
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     return JSONResponse(
         status_code=422,
-        content={"error": "Error de validación", "details": exc.errors()},
+        # Los errores de model_validator traen la excepción original en ctx: se serializa como texto.
+        content={"error": "Error de validación", "details": jsonable_encoder(exc.errors(), custom_encoder={Exception: str})},
     )
 
 # Rutas

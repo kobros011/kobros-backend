@@ -17,6 +17,7 @@ class PaymentHistoryRead(BaseModel):
     value: float
     applied: float
     balance: float
+    excess: float
     status: HistoryStatus
     days_overdue: int
     paid_late_days: int

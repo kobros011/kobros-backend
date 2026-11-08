@@ -56,6 +56,7 @@ class CollectionTodayRead(PaymentFullRead):
     client_address: Optional[str] = None
     client_mobile: Optional[str] = None
     loan_number: int
+    client_beak: float = 0
 
 class PaymentFilters(BaseModel):
     text: str
