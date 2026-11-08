@@ -82,11 +82,28 @@ class ClientRepository(AbstractClientRepository):
             if not model:
                 raise NotFoundException("El cliente no fue encontrado")
 
-            return self.model_to_entity(model)
+            client = self.model_to_entity(model)
+            await self._attach_route_totals([client])
+            return client
         except IntegrityError as e:
             user_message = ValidatorErrors.integrity_error(e)
             raise ConflictException(user_message)
         
+    async def _attach_route_totals(self, clients: List[Client]) -> None:
+        """Agrega `route_total` (clientes activos de la ruta) a cada ruta de cada cliente, con una sola consulta."""
+        route_ids = {item["route_id"] for client in clients for item in client.routes}
+        if not route_ids:
+            return
+        stmt = (
+            select(ClientRouteModel.route_id, func.count())
+            .where(ClientRouteModel.route_id.in_(route_ids), ClientRouteModel.active.is_not(False))
+            .group_by(ClientRouteModel.route_id)
+        )
+        totals = {route_id: count for route_id, count in (await self.db.execute(stmt)).all()}
+        for client in clients:
+            for item in client.routes:
+                item["route_total"] = int(totals.get(item["route_id"], 0))
+
     async def get_by_id_more_info(self, client_id: UUID, route_id: UUID) -> ClientById | None:
         try:
             result = await self.db.execute(
@@ -112,10 +129,21 @@ class ClientRepository(AbstractClientRepository):
             if not self.user:
                 raise NotFoundException("Usuario no encontrado")
 
-            query_stmt = (await self.get_queryset(filters)).order_by(ClientModel.full_name, ClientModel.id)
+            query_stmt = await self.get_queryset(filters)
+            route_id = dict(filters).get("route_id", None)
+            if route_id:  # con una ruta filtrada, primero por su prioridad en esa ruta
+                priority = (
+                    select(ClientRouteModel.order)
+                    .where(ClientRouteModel.cliente_id == ClientModel.id, ClientRouteModel.route_id == route_id, ClientRouteModel.active.is_not(False))
+                    .scalar_subquery()
+                )
+                query_stmt = query_stmt.order_by(priority, ClientModel.full_name, ClientModel.id)
+            else:
+                query_stmt = query_stmt.order_by(ClientModel.full_name, ClientModel.id)
             query_stmt = query_stmt.options(selectinload(ClientModel.clientsroutes), selectinload(ClientModel.references))
             items, total = await paginate_or_all(self.db, query_stmt, params, self.model_to_entity)
             await self._attach_active_loans_count(items)
+            await self._attach_route_totals(items)
             return items, total
         except IntegrityError as e:
             await self.db.rollback()

@@ -11,6 +11,10 @@ class ClientRouteRead(BaseModel):
     id_document: str
     client_id: UUID
     route_id: UUID
+    route_name: str = ""
+    neighborhood: str = ""
+    current_mobile: str = ""
+    client_active: bool = True
     active: bool
     created_at: datetime
     updated_at: Optional[datetime]

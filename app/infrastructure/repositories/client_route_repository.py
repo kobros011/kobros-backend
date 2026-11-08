@@ -21,7 +21,7 @@ class ClientRouteRepository(AbstractClientRouteRepository):
     async def get_client_route_by_id(self, client_route_id: UUID) -> Optional[ClientRoute]:
         try:
             result = await self.db.execute(
-                select(ClientRouteModel).where(ClientRouteModel.id == client_route_id)
+                select(ClientRouteModel).where(ClientRouteModel.id == client_route_id).options(selectinload(ClientRouteModel.client))
             )
             model = result.scalars().first()
             if not model:

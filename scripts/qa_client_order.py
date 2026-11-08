@@ -81,6 +81,17 @@ async def main() -> int:
     by_client = {r["client_id"]: r for r in rows_a}
     cr = {name: by_client[c["id"]]["id"] for name, c in (("multi", multi), ("c2", c2), ("c3", c3), ("c4", c4))}
 
+    print("== Datos para la UI ==")
+    ra = {x["client_id"]: x for x in rows_a}
+    check(all(x["route_name"] for x in rows_a) and ra[c2["id"]]["neighborhood"] == "QA" and ra[c2["id"]]["current_mobile"] == "3000000000" and ra[c2["id"]]["client_active"] is True,
+          "ClientRouteRead trae ruta, barrio, celular y estado del cliente")
+    totals = {x["route_id"]: x["route_total"] for x in detail["routes"]}
+    check(totals == {a: 4, b: 1}, f"ClientRead.routes trae route_total por ruta (A=4, B=1) -> {totals}")
+    listing = (await api.call(sup, "GET", "/clients/", params={"route_id": a, "page_size": 50})).json()
+    listing = listing["items"] if isinstance(listing, dict) else listing
+    mine = [it["id"] for it in listing if it["id"] in {multi["id"], c2["id"], c3["id"], c4["id"]}]
+    check(mine == [multi["id"], c2["id"], c3["id"], c4["id"]], "GET /clients?route_id= ordena por la prioridad de esa ruta")
+
     print("== Mover uno ==")
     r = await api.call(sup, "PUT", f"/clientroute/{cr['c4']}/order", json={"position": 1})
     rows = r.json() if r.status_code == 200 else []

@@ -9,6 +9,10 @@ class ClientRoute(Base):
     id_document: str = ""
     client_id: UUID = None
     route_id: UUID = None
+    route_name: str = ""
+    neighborhood: str = ""
+    current_mobile: str = ""
+    client_active: bool = True
 
 @dataclass(frozen=True)
 class RouteInfo:

@@ -23,6 +23,7 @@ class ClientRouteInfoRead(BaseModel):
     route_name: str = ""
     clientroute_id: UUID
     order: int
+    route_total: int = 0  # clientes activos de la ruta ("#2 de 38")
 
 
 class ClientRead(BaseModel):
