@@ -17,4 +17,4 @@ jobs:
             --retry 2 \
             --retry-delay 10 \
             --write-out "\nHTTP %{http_code} in %{time_total}s\n" \
-            "https://kobros-api.onrender.com/docs"
+            "https://kobros-backend.onrender.com/docs"
