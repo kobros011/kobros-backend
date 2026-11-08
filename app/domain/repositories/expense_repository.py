@@ -129,6 +129,7 @@ class AbstractExpenseRepository(ABC):
             name=entity.name,
             expensesconcept_id=entity.expensesconcept_id,
             user_generated=entity.user_generated,
+            created_by=entity.created_by,
             route_id=entity.route_id,
             liquidated=entity.liquidated,
             date_liquidated=entity.date_liquidated,

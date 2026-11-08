@@ -19,6 +19,8 @@ class PaymentModel(Base):
 
     # Usuario que registró el abono (NULL en pagos anteriores a esta columna).
     collected_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    # Cierre de caja que incluyó este pago (NULL = aún sin liquidar).
+    liquidation_id = Column(UUID(as_uuid=True), ForeignKey("liquidations.id"), nullable=True)
 
     loan_id = Column(UUID(as_uuid=True), ForeignKey("loans.id"))
     loan = relationship("LoanModel", back_populates="payments")

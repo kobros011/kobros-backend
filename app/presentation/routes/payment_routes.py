@@ -78,7 +78,3 @@ async def pay_payment(
 @router.delete("/{payment_id}")
 async def delete_payment(payment_id: UUID, usecases: PaymentUseCases = Depends(get_payment_usecases)):
     return await usecases.delete_payment(payment_id)
-
-@router.post("/get_total_liquidation")
-async def get_total_liquidation(route_id: UUID, pay_date: str, usecases: PaymentUseCases = Depends(get_payment_usecases)):
-    return await usecases.get_total_liquidation(pay_date, route_id)

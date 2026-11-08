@@ -23,6 +23,7 @@ class LoanModel(Base):
     value_total_loan = Column(Float(2, True)) ## Valor del préstamo total
     interest_rate = Column(Float(4, True)) ## Tasa de interés
 
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)  # quién creó el crédito (desembolso del cobrador)
     clientroute_id = Column(UUID(as_uuid=True), ForeignKey("clientsroutes.id"))
     clientroute = relationship("ClientRouteModel", back_populates="loans")
 

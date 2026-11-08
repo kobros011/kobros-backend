@@ -1,176 +1,253 @@
+from datetime import date, datetime, timezone
+from typing import Optional
 from uuid import UUID
-from datetime import datetime, date as date_type
-from ...domain.entities.liquidation import Liquidation
-from ...domain.repositories.liquidation_repository import AbstractLiquidationRepository
-from sqlalchemy.future import select
-from sqlalchemy import func
+
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Optional, List
+from sqlalchemy.orm import aliased
+
+from ...core.clock import today_bogota
+from ...core.exceptions import BadRequestException, ConflictException, NotFoundException
+from ...core.pagination import PaginationParams, paginate_mappings
+from ..models.expense_model import ExpenseModel
 from ..models.liquidation_model import LiquidationModel
 from ..models.payment_model import PaymentModel
-from ..models.loan_model import LoanModel
-from ..models.client_route_model import ClientRouteModel
-from ..models.expense_model import ExpenseModel
-from ...presentation.shemas.liquidation_shema import LiquidationUpdate
+from ..models.route_model import RouteModel
+from ..models.user_model import UserModel
 from ..utils.validator_errors import ValidatorErrors
-from ...core.exceptions import ConflictException, NotFoundException
+from . import liquidation_calculator as calc
+
+_COLLECTOR = aliased(UserModel)
+_CONFIRMER = aliased(UserModel)
 
 
-class LiquidationRepository(AbstractLiquidationRepository):
+def _status(row) -> str:
+    if row["reopened_at"] is not None:
+        return "reabierta"
+    return "confirmada" if row["admin_confirmed_at"] is not None else "pendiente"
+
+
+def _read_columns():
+    return [
+        *[c for c in LiquidationModel.__table__.c],
+        RouteModel.name.label("route_name"),
+        _COLLECTOR.full_name.label("collector_name"),
+        _CONFIRMER.full_name.label("confirmed_by_name"),
+    ]
+
+
+def _read_select():
+    return (
+        select(*_read_columns())
+        .select_from(LiquidationModel)
+        .join(RouteModel, RouteModel.id == LiquidationModel.route_id)
+        .outerjoin(_COLLECTOR, _COLLECTOR.id == LiquidationModel.collector_id)
+        .outerjoin(_CONFIRMER, _CONFIRMER.id == LiquidationModel.admin_confirmed_by)
+    )
+
+
+_MONEY = ("today_collection_goal", "value_base_delivered", "total_value_charged", "total_value_expenses", "value_new_loans",
+          "cash_delivered", "expected_cash", "difference", "beak_generated")
+
+
+def _to_read(row) -> dict:
+    data = dict(row)
+    for key in _MONEY:  # las columnas Float(2, True) llegan como Decimal
+        if data.get(key) is not None:
+            data[key] = float(data[key])
+    data["status"] = _status(data)
+    return data
+
+
+class LiquidationRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def get_liquidation_by_id(self, liquidation_id: UUID) -> Optional[Liquidation]:
+    # ---- lecturas ----
+    async def get_route(self, route_id: UUID) -> RouteModel:
+        route = (await self.db.execute(select(RouteModel).where(RouteModel.id == route_id))).scalars().first()
+        if route is None:
+            raise NotFoundException("Ruta no encontrada")
+        return route
+
+    async def get_model(self, liquidation_id: UUID) -> LiquidationModel:
+        model = (await self.db.execute(select(LiquidationModel).where(LiquidationModel.id == liquidation_id))).scalars().first()
+        if model is None:
+            raise NotFoundException("Liquidación no encontrada")
+        return model
+
+    async def get_read(self, liquidation_id: UUID) -> dict:
+        row = (await self.db.execute(_read_select().where(LiquidationModel.id == liquidation_id))).mappings().first()
+        if row is None:
+            raise NotFoundException("Liquidación no encontrada")
+        return _to_read(row)
+
+    async def user_name(self, user_id: Optional[UUID]) -> Optional[str]:
+        if not user_id:
+            return None
+        return (await self.db.execute(select(UserModel.full_name).where(UserModel.id == user_id))).scalar_one_or_none()
+
+    async def active_for(self, route_id: UUID, day: date, collector_id: Optional[UUID]) -> Optional[dict]:
+        stmt = _read_select().where(LiquidationModel.route_id == route_id, LiquidationModel.date == day, LiquidationModel.active.is_(True))
+        stmt = stmt.where(LiquidationModel.collector_id == collector_id) if collector_id else stmt.where(LiquidationModel.collector_id.is_(None))
+        row = (await self.db.execute(stmt)).mappings().first()
+        return _to_read(row) if row else None
+
+    async def last_base(self, route_id: UUID, collector_id: Optional[UUID]) -> float:
+        stmt = select(LiquidationModel.value_base_delivered).where(LiquidationModel.route_id == route_id, LiquidationModel.active.is_(True))
+        stmt = stmt.where(LiquidationModel.collector_id == collector_id) if collector_id else stmt
+        stmt = stmt.order_by(LiquidationModel.date.desc(), LiquidationModel.created_at.desc()).limit(1)
+        return float((await self.db.execute(stmt)).scalar_one_or_none() or 0)
+
+    async def list_page(self, *, brand_id: Optional[UUID], route_ids: Optional[list], collector_id: Optional[UUID], route_id: Optional[UUID],
+                        date_from: Optional[date], date_to: Optional[date], status: Optional[str], include_reopened: bool,
+                        params: PaginationParams) -> tuple[list[dict], int]:
+        stmt = _read_select()
+        if brand_id is not None:
+            stmt = stmt.where(RouteModel.brand_id == brand_id)
+        if route_ids is not None:
+            stmt = stmt.where(LiquidationModel.route_id.in_(route_ids))
+        if route_id:
+            stmt = stmt.where(LiquidationModel.route_id == route_id)
+        if collector_id:
+            stmt = stmt.where(LiquidationModel.collector_id == collector_id)
+        if date_from:
+            stmt = stmt.where(LiquidationModel.date >= date_from)
+        if date_to:
+            stmt = stmt.where(LiquidationModel.date <= date_to)
+        if status == "pendiente":
+            stmt = stmt.where(LiquidationModel.admin_confirmed_at.is_(None), LiquidationModel.reopened_at.is_(None), LiquidationModel.active.is_(True))
+        elif status == "confirmada":
+            stmt = stmt.where(LiquidationModel.admin_confirmed_at.isnot(None), LiquidationModel.reopened_at.is_(None))
+        elif status == "reabierta":
+            stmt = stmt.where(LiquidationModel.reopened_at.isnot(None))
+        elif not include_reopened:
+            stmt = stmt.where(LiquidationModel.active.is_(True))
+        stmt = stmt.order_by(LiquidationModel.date.desc(), LiquidationModel.created_at.desc())
+        rows, total = await paginate_mappings(self.db, stmt, params)
+        return [_to_read(r) for r in rows], total
+
+    # ---- cierre ----
+    async def create(self, *, route_id: UUID, day: date, collector_id: Optional[UUID], base: float, cash: float, note: Optional[str]) -> dict:
         try:
-            result = await self.db.execute(
-                select(LiquidationModel).where(LiquidationModel.id == liquidation_id)
+            figures = await calc.compute_figures(self.db, route_id, day, collector_id)
+            expected = calc.expected_cash(base, figures)
+            liquidation = LiquidationModel(
+                date=day, route_id=route_id, collector_id=collector_id,
+                today_collection_goal=figures["goal"], value_base_delivered=base,
+                total_value_charged=figures["collected_total"], total_value_expenses=figures["expenses_total"],
+                value_new_loans=figures["new_loans_total"], receipts_count=figures["receipts_count"],
+                beak_generated=figures["beak_generated"], cash_delivered=cash, expected_cash=expected,
+                difference=round(cash - expected, 2), note=note,
             )
-            model = result.scalars().first()
-            if not model:
-                raise NotFoundException("Liquidación no encontrada")
-            return self.model_to_entity(model)
-        except IntegrityError as e:
-            user_message = ValidatorErrors.integrity_error(e)
-            raise ConflictException(user_message)
-
-    async def list_liquidations(self) -> List[Liquidation]:
-        try:
-            result = await self.db.execute(select(LiquidationModel))
-            models = result.scalars().all()
-            return [self.model_to_entity(m) for m in models]
-        except IntegrityError as e:
-            user_message = ValidatorErrors.integrity_error(e)
-            raise ConflictException(user_message)
-
-    async def create_liquidation(self, liquidation: Liquidation, route_id: UUID, liq_date: date_type) -> Optional[Liquidation]:
-        # Check for duplicate: same route + date
-        existing = await self.db.execute(
-            select(LiquidationModel).where(
-                LiquidationModel.route_id == route_id,
-                LiquidationModel.date == liq_date,
-                LiquidationModel.active == True,
-            )
-        )
-        if existing.scalars().first():
-            raise ConflictException("Ya existe una liquidación para esta ruta y fecha")
-
-        # Calculate total_value_charged from payments not yet liquidated
-        payments_result = await self.db.execute(
-            select(PaymentModel)
-            .join(LoanModel, PaymentModel.loan_id == LoanModel.id)
-            .join(ClientRouteModel, LoanModel.clientroute_id == ClientRouteModel.id)
-            .where(
-                ClientRouteModel.route_id == route_id,
-                PaymentModel.pay_date == liq_date,
-                PaymentModel.liquidated == False,
-            )
-        )
-        payments = payments_result.scalars().all()
-        total_charged = sum(p.applied or 0 for p in payments)
-
-        # Calculate total_value_expenses from expenses not yet liquidated
-        expenses_result = await self.db.execute(
-            select(ExpenseModel).where(
-                ExpenseModel.route_id == route_id,
-                ExpenseModel.date == liq_date,
-                ExpenseModel.liquidated == False,
-                ExpenseModel.active == True,
-            )
-        )
-        expenses = expenses_result.scalars().all()
-        total_expenses = sum(e.value or 0 for e in expenses)
-
-        liquidation.total_value_charged = total_charged
-        liquidation.total_value_expenses = total_expenses
-
-        orm_liquidation = self.entity_to_model(liquidation)
-        self.db.add(orm_liquidation)
-
-        try:
+            self.db.add(liquidation)
             await self.db.flush()
 
-            # Mark payments and expenses as liquidated
-            today = date_type.today()
-            for p in payments:
-                p.liquidated = True
-                p.date_liquidated = today
-            for e in expenses:
-                e.liquidated = True
-                e.date_liquidated = today
-
+            today = today_bogota()
+            await self.db.execute(update(PaymentModel).where(PaymentModel.id.in_(calc.linked_payment_ids(route_id, day, collector_id)))
+                                  .values(liquidated=True, date_liquidated=today, liquidation_id=liquidation.id))
+            await self.db.execute(update(ExpenseModel).where(ExpenseModel.id.in_(calc.linked_expense_ids(route_id, day, collector_id)))
+                                  .values(liquidated=True, date_liquidated=today, liquidation_id=liquidation.id))
             await self.db.commit()
-            await self.db.refresh(orm_liquidation)
-            return self.model_to_entity(orm_liquidation)
+            return await self.get_read(liquidation.id)
         except IntegrityError as e:
             await self.db.rollback()
-            user_message = ValidatorErrors.integrity_error(e)
-            raise ConflictException(user_message)
-
-    async def update_liquidation(self, liquidation: LiquidationUpdate) -> Optional[Liquidation]:
-        try:
-            result = await self.db.execute(
-                select(LiquidationModel).where(LiquidationModel.id == liquidation.id)
-            )
-            current_liquidation = result.scalars().first()
-
-            if not current_liquidation:
-                raise NotFoundException("Liquidación no encontrada")
-
-            update_data = liquidation.model_dump(exclude_unset=True)
-            current_liquidation = self.update_values(update_data, current_model=current_liquidation)
-
-            await self.db.commit()
-            await self.db.refresh(current_liquidation)
-            return self.model_to_entity(current_liquidation)
-
-        except IntegrityError as e:
+            raise ConflictException("Ya existe una liquidación para esta ruta, cobrador y fecha" if "uq_liquidations" in str(e) else ValidatorErrors.integrity_error(e))
+        except Exception:
             await self.db.rollback()
-            user_message = ValidatorErrors.integrity_error(e)
-            raise ConflictException(user_message)
+            raise
 
-    async def confirm_liquidation(self, liquidation_id: UUID, confirmed_by: UUID) -> Optional[Liquidation]:
-        try:
-            result = await self.db.execute(
-                select(LiquidationModel).where(LiquidationModel.id == liquidation_id)
-            )
-            current_liquidation = result.scalars().first()
+    async def confirm(self, liquidation_id: UUID, confirmed_by: UUID) -> dict:
+        model = await self.get_model(liquidation_id)
+        if not model.active or model.reopened_at is not None:
+            raise ConflictException("La liquidación fue reabierta o eliminada")
+        if model.admin_confirmed_at:
+            raise ConflictException("La liquidación ya fue confirmada")
+        if await self.is_outdated(model):
+            raise ConflictException("La liquidación está desactualizada (hay cobros o gastos nuevos): reábrela y vuelve a cerrar")
+        model.admin_confirmed_at = datetime.now(timezone.utc)
+        model.admin_confirmed_by = confirmed_by
+        await self.db.commit()
+        return await self.get_read(liquidation_id)
 
-            if not current_liquidation:
-                raise NotFoundException("Liquidación no encontrada")
+    async def _release(self, liquidation_id: UUID) -> None:
+        """Devuelve pagos y gastos del cierre al estado "sin liquidar"."""
+        await self.db.execute(update(PaymentModel).where(PaymentModel.liquidation_id == liquidation_id)
+                              .values(liquidated=False, date_liquidated=None, liquidation_id=None))
+        await self.db.execute(update(ExpenseModel).where(ExpenseModel.liquidation_id == liquidation_id)
+                              .values(liquidated=False, date_liquidated=None, liquidation_id=None))
 
-            if current_liquidation.admin_confirmed_at:
-                raise ConflictException("La liquidación ya fue confirmada")
+    async def reopen(self, liquidation_id: UUID, reopened_by: UUID) -> dict:
+        model = await self.get_model(liquidation_id)
+        if not model.active:
+            raise ConflictException("La liquidación ya está cerrada o eliminada")
+        await self._release(liquidation_id)
+        model.active = False
+        model.reopened_at = datetime.now(timezone.utc)
+        model.reopened_by = reopened_by
+        await self.db.commit()
+        return await self.get_read(liquidation_id)
 
-            current_liquidation.admin_confirmed_at = datetime.utcnow()
-            current_liquidation.admin_confirmed_by = confirmed_by
+    async def delete_unconfirmed(self, liquidation_id: UUID) -> None:
+        model = await self.get_model(liquidation_id)
+        if model.admin_confirmed_at:
+            raise ConflictException("La liquidación está confirmada: un admin debe reabrirla")
+        await self._release(liquidation_id)
+        model.active = False
+        await self.db.commit()
 
-            await self.db.commit()
-            await self.db.refresh(current_liquidation)
-            return self.model_to_entity(current_liquidation)
+    async def update_note(self, liquidation_id: UUID, note: Optional[str]) -> dict:
+        model = await self.get_model(liquidation_id)
+        if model.admin_confirmed_at or not model.active:
+            raise ConflictException("Solo se puede editar la nota de un cierre pendiente")
+        model.note = note
+        await self.db.commit()
+        return await self.get_read(liquidation_id)
 
-        except IntegrityError as e:
-            await self.db.rollback()
-            user_message = ValidatorErrors.integrity_error(e)
-            raise ConflictException(user_message)
+    async def is_outdated(self, model: LiquidationModel) -> bool:
+        current = await calc.compute_figures(self.db, model.route_id, model.date, model.collector_id, model.id)
+        return (abs(current["collected_total"] - float(model.total_value_charged or 0)) > calc.TOLERANCE
+                or abs(current["expenses_total"] - float(model.total_value_expenses or 0)) > calc.TOLERANCE
+                or abs(current["new_loans_total"] - float(model.value_new_loans or 0)) > calc.TOLERANCE)
 
-    async def delete_liquidation(self, liquidation_id: UUID):
-        try:
-            result = await self.db.execute(
-                select(LiquidationModel).where(LiquidationModel.id == liquidation_id)
-            )
-            current_liquidation = result.scalars().first()
+    async def detail(self, liquidation_id: UUID) -> dict:
+        data = await self.get_read(liquidation_id)
+        day, route_id, collector_id = data["date"], data["route_id"], data["collector_id"]
+        if data["active"]:
+            current = await calc.compute_figures(self.db, route_id, day, collector_id, liquidation_id)
+        else:  # cierre reabierto: no tiene pagos enlazados, se muestra lo guardado
+            current = {"collected_total": data["total_value_charged"], "expenses_total": data["total_value_expenses"], "new_loans_total": data["value_new_loans"]}
+        outdated = data["active"] and (
+            abs(current["collected_total"] - data["total_value_charged"]) > calc.TOLERANCE
+            or abs(current["expenses_total"] - data["total_value_expenses"]) > calc.TOLERANCE
+            or abs(current["new_loans_total"] - data["value_new_loans"]) > calc.TOLERANCE)
+        data.update(
+            outdated=bool(outdated),
+            current_total_charged=current["collected_total"], current_total_expenses=current["expenses_total"], current_new_loans=current["new_loans_total"],
+            payments=await calc.payment_lines(self.db, route_id, day, collector_id, liquidation_id) if data["active"] else [],
+            expenses=await calc.expense_lines(self.db, route_id, day, collector_id, liquidation_id) if data["active"] else [],
+        )
+        return data
 
-            if not current_liquidation:
-                raise NotFoundException("La liquidación no fue encontrada")
+    async def preview(self, route_id: UUID, day: date, collector_id: Optional[UUID]) -> dict:
+        route = await self.get_route(route_id)
+        figures = await calc.compute_figures(self.db, route_id, day, collector_id)
+        base = await self.last_base(route_id, collector_id)
+        existing = await self.active_for(route_id, day, collector_id)
+        goal_paid = figures["collected_due_today"]
+        return {
+            **figures,
+            "route_id": route_id, "route_name": route.name, "collector_id": collector_id,
+            "collector_name": await self.user_name(collector_id), "date": day, "suggested_base": base,
+            "expected_cash": calc.expected_cash(base, figures),
+            "progress_percent": round(min(100.0, goal_paid / figures["goal"] * 100), 1) if figures["goal"] else 0.0,
+            "expenses": await calc.expense_lines(self.db, route_id, day, collector_id),
+            "existing_liquidation_id": existing["id"] if existing else None,
+            "existing_status": existing["status"] if existing else None,
+        }
 
-            current_liquidation.active = False
-
-            await self.db.commit()
-            await self.db.refresh(current_liquidation)
-            return "Liquidación eliminada exitosamente"
-
-        except IntegrityError as e:
-            await self.db.rollback()
-            liquidation_message = ValidatorErrors.integrity_error(e)
-            raise ConflictException(liquidation_message)
+    @staticmethod
+    def ensure_closable(day: date) -> None:
+        if day > today_bogota():
+            raise BadRequestException("No se puede cerrar la caja de una fecha futura")

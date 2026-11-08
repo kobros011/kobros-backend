@@ -109,33 +109,6 @@ class PaymentRepository(AbstractPaymentRepository):
 
         return stmt
 
-    async def get_total_liquidation(self, pay_date: str, route_id: UUID):
-
-        stmt = await self.get_stmt_load_more_info()
-
-        payments_today_filter = dict(pay_date=pay_date, payments_to_pay_today=True, route_id=route_id)
-        payments_to_collect_today_filter = dict(pay_date=pay_date, payments_pending=True, payments_to_pay=True, route_id=route_id)
-        payments_collect_today_filter = dict(payment_date=pay_date, status=PaymentStatus.paid.value, route_id=route_id)
-
-        payments_today = await self.get_stmt(payments_today_filter, stmt)
-        payments_to_collect_today = await self.get_stmt(payments_to_collect_today_filter, stmt)
-        payments_collect_today = await self.get_stmt(payments_collect_today_filter, stmt)
-
-        payments_today_sum  = await self.db.execute(payments_today.with_only_columns(func.sum(PaymentModel.value)))
-        payments_to_collect_today_sum = await self.db.execute(payments_to_collect_today.with_only_columns(func.sum(PaymentModel.value)))
-        payments_collect_today_sum = await self.db.execute(payments_collect_today.with_only_columns(func.sum(PaymentModel.value)))
-
-
-        total_today =  payments_today_sum.scalar() or 0
-        total_to_collect_today =  payments_to_collect_today_sum.scalar() or 0
-        total_collect_today =  payments_collect_today_sum.scalar() or 0
-
-        return {
-            "total_today": total_today,
-            "total_to_collect_today": total_to_collect_today,
-            "total_collect_today": total_collect_today
-        }
-
     async def get_payment_by_id(self, payment_id: UUID) -> Optional[Payment]:
         try:
             result = await self.db.execute(

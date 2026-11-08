@@ -30,9 +30,5 @@ class PaymentUseCases:
     
     async def delete_payment(self, payment_id: UUID):
         return await self.repository.delete_payment(payment_id)
-
-    async def get_total_liquidation(self, pay_date: str, route_id: UUID):
-        return await self.repository.get_total_liquidation(pay_date, route_id)
-
     async def get_today_collection(self, route_id: UUID, collect_date: date) -> List[CollectionTodayRead]:
         return await self.repository.list_today_collection(route_id, collect_date)

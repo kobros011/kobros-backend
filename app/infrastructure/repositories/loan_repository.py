@@ -207,6 +207,7 @@ class LoanRepository(AbstractLoanRepository):
                 canceled_quotas=0,
                 total_default=0,
                 clientroute_id=loan.clientroute_id,
+                created_by=user.id,
             )
             self.db.add(orm_loan)
             await self.db.flush()

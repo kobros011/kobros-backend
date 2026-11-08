@@ -52,7 +52,7 @@ class ExpenseUseCases:
 
         data = expense.model_dump(exclude={"user_generated"})
         user_generated = (self.user.full_name or self.user.username) if self.user else ""
-        new_expense = Expense(**data, user_generated=user_generated)
+        new_expense = Expense(**data, user_generated=user_generated, created_by=self.user.id if self.user else None)
         return await self.repository.create_expense(new_expense)
 
     async def update_expense(self, expense: ExpenseUpdate) -> Optional[Expense]:

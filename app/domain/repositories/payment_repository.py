@@ -37,10 +37,6 @@ class AbstractPaymentRepository(ABC):
         pass
 
     @abstractmethod
-    async def get_total_liquidation(self, pay_date: str, route_id: UUID) -> float:
-        pass
-
-    @abstractmethod
     async def list_today_collection(self, route_id: UUID, collect_date: date_type) -> List[CollectionTodayRead]:
         pass
     

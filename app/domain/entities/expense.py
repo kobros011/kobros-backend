@@ -20,6 +20,7 @@ class Expense(Base):
 
     expensesconcept_id: UUID = None
     user_generated: str = ""
+    created_by: Optional[UUID] = None
     expenseconcept: Optional[ExpenseConcept] = None
 
     liquidated: bool = False

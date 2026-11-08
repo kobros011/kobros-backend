@@ -1,4 +1,4 @@
-from sqlalchemy import Column, ForeignKey, Date, Float, DateTime
+from sqlalchemy import Column, ForeignKey, Date, Float, DateTime, Integer, Text
 from sqlalchemy.orm import relationship
 from app.infrastructure.dababase.base_class import Base
 from sqlalchemy.dialects.postgresql import UUID
@@ -19,3 +19,13 @@ class LiquidationModel(Base):
     collector_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     admin_confirmed_at = Column(DateTime(timezone=True), nullable=True)
     admin_confirmed_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+    # Cuadre (lo calcula el servidor; `cash_delivered` es el efectivo contado que digita quien cierra)
+    cash_delivered = Column(Float, nullable=True)
+    expected_cash = Column(Float, nullable=True)
+    difference = Column(Float, nullable=True)
+    receipts_count = Column(Integer, nullable=False, default=0)
+    beak_generated = Column(Float, nullable=False, default=0)
+    note = Column(Text, nullable=True)
+    reopened_at = Column(DateTime(timezone=True), nullable=True)
+    reopened_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
