@@ -143,6 +143,8 @@ async def main() -> int:
     check(r.status_code == 400, "un cliente no puede quedar sin rutas → 400", str(r.status_code))
     r = await api.call(carlos, "PUT", f"/clients/{multi['id']}", json={"id": multi["id"], "full_name": multi["full_name"], "routes_ids": [a]})
     check(r.status_code in (403, 404), "un cobrador no puede cambiar las rutas del cliente", str(r.status_code))
+    r = await api.call(carlos, "PUT", f"/clients/{multi['id']}", json={"id": multi["id"], "full_name": multi["full_name"], "routes_ids": [a, b]})
+    check(r.status_code == 200, "un cobrador sí puede guardar al cliente si las rutas no cambian (el formulario las reenvía)", str(r.status_code))
 
     print("== Permisos ==")
     r = await api.call(carlos, "PUT", f"/clientroute/{cr['c2']}/order", json={"position": 1})

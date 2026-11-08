@@ -245,11 +245,14 @@ class ClientRepository(AbstractClientRepository):
     async def _sync_client_routes(self, client: ClientModel, routes_ids: List[UUID]) -> None:
         """Deja al cliente en exactamente `routes_ids`: agrega las nuevas (al final) y quita las que sobran
         (solo si no tienen créditos con cuotas pendientes). Solo administración."""
+        desired = list(dict.fromkeys(routes_ids))
+        if {cr.route_id for cr in client.clientsroutes if cr.active is not False} == set(desired):
+            return  # el formulario reenvía las rutas actuales: sin cambios no hace falta ser administrador
+
         role = getattr(self.user.type_user, "value", str(self.user.type_user))
         if role in ("04", "05"):
             raise ForbiddenException("Solo un administrador puede cambiar las rutas de un cliente")
 
-        desired = list(dict.fromkeys(routes_ids))
         if not desired:
             raise BadRequestException("El cliente debe tener al menos una ruta")
         valid = await self.db.execute(select(RouteModel.id).where(RouteModel.id.in_(desired), RouteModel.brand_id == client.brand_id))
