@@ -28,3 +28,12 @@ Cobro atrasado entra al cierre del día, cierre por cobrador vs consolidado, dob
 ## Resultado (última corrida)
 - `qa_liquidations_flow.py`: 60/60 (A y B).
 - `qa_liquidations.py`: 50/50 · regresión `qa_reports.py` 69/69 · `qa_payment_history.py` 31/31 · `qa_loan_create.py` 87/87.
+
+## Prueba desde la interfaz (UI)
+Preparación (una vez):
+1. `docker compose exec api python scripts/seed_liquidation_ui.py` → ruta **QD UI Liquidación** con 8 clientes (5 con cuota de hoy, 2 atrasados, 1 para abonar), asignada a `qd_carlos` (cobrador) y `admin_norte` (admin).
+2. Cuenta del cobrador en Clerk (la crea quien administra Clerk, no el QA automatizado):
+   `docker compose exec api python scripts/sync_users_to_clerk.py --only qd_carlos --password 'KobrosTest123'`
+   (`admin_norte` y `super_norte` ya tienen cuenta.)
+
+Recorrido: **cobrador** (Cobro del día → ruta QD UI Liquidación): cobrar cuotas de hoy, una atrasada, un parcial y un pago de más; registrar 2 gastos; (escenario A) crear un crédito nuevo con "Valor pagado hoy". **Admin** (Liquidaciones): elegir ruta y cobrador, revisar cifras, cerrar con un faltante, confirmar, reabrir y volver a cerrar. Comparar cada cifra con la API.

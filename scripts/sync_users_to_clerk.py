@@ -6,6 +6,7 @@ Uso (desde el contenedor api):
   python scripts/sync_users_to_clerk.py
   python scripts/sync_users_to_clerk.py --dry-run
   python scripts/sync_users_to_clerk.py --password 'Temporal123'
+  python scripts/sync_users_to_clerk.py --only qd_carlos --password 'KobrosTest123'
 """
 from __future__ import annotations
 
@@ -47,6 +48,7 @@ async def sync_users(
     *,
     dry_run: bool,
     fixed_password: Optional[str],
+    only: Optional[list[str]] = None,
 ) -> int:
     clerk = ClerkClient()
     if not clerk.configured:
@@ -57,7 +59,7 @@ async def sync_users(
 
     async with async_session() as session:
         result = await session.execute(
-            select(UserModel).where(UserModel.clerk_user_id.is_(None))
+            select(UserModel).where(UserModel.clerk_user_id.is_(None), *( [UserModel.username.in_(only)] if only else [] ))
         )
         users = result.scalars().all()
 
@@ -98,6 +100,7 @@ async def sync_users(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Sincroniza usuarios Kobros con Clerk")
     parser.add_argument("--dry-run", action="store_true", help="Solo listar, sin cambios")
+    parser.add_argument("--only", nargs="+", metavar="USERNAME", help="Solo estos usernames (por defecto, todos los pendientes)")
     parser.add_argument(
         "--password",
         help="Contraseña temporal fija para todos (mín. 8 caracteres)",
@@ -110,7 +113,7 @@ def main() -> None:
         sys.exit(1)
 
     code = asyncio.run(
-        sync_users(dry_run=args.dry_run, fixed_password=args.password)
+        sync_users(dry_run=args.dry_run, fixed_password=args.password, only=args.only)
     )
     sys.exit(1 if code else 0)
 
