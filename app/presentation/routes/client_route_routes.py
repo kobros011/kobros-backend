@@ -10,7 +10,7 @@ from ...use_cases.client_route_cases import ClientRouteUseCases
 from ...infrastructure.utils.require_authentication import require_authentication, get_current_user
 from ...infrastructure.utils.require_role import require_role
 from ...infrastructure.utils.access import ensure_clientroute_access, ensure_route_access
-from ...core.exceptions import BadRequestException, NotFoundException
+from ...core.exceptions import BadRequestException
 from app.infrastructure.models.user_model import UserModel
 
 router = APIRouter(dependencies=[Depends(require_authentication)])

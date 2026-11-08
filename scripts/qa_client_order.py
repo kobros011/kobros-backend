@@ -141,6 +141,13 @@ async def main() -> int:
     check(r.status_code == 200 and len(rows_b) == 1 and rows_b[0]["order"] == 1, "volver a agregar la ruta B lo deja al final (#1 en una ruta vacía)")
     r = await api.call(sup, "PUT", f"/clients/{multi['id']}", json={"id": multi["id"], "full_name": multi["full_name"], "routes_ids": []})
     check(r.status_code == 400, "un cliente no puede quedar sin rutas → 400", str(r.status_code))
+    cr_b = rows_b[0]["id"]
+    loan = await api.call(sup, "POST", "/loans/", json={"value_quota_fixed": 100000, "agreed_quotas": 6, "date_first_quota": datetime.now().date().isoformat(), "payment_method": "diaria",
+                                                       "value_capital": 400000, "current_address": "Calle QA", "current_mobile": "3000000000", "clientroute_id": cr_b, "client_id": multi["id"]})
+    check(loan.status_code == 201, "se crea un crédito del cliente en la ruta B", loan.text[:120])
+    r = await api.call(sup, "PUT", f"/clients/{multi['id']}", json={"id": multi["id"], "full_name": multi["full_name"], "routes_ids": [a]})
+    check(r.status_code == 409, "no se puede quitar una ruta donde el cliente tiene un crédito con saldo → 409", f"{r.status_code} {r.text[:100]}")
+    check(len(await route_rows(api, sup, b)) == 1, "la ruta B sigue con su cliente tras el intento rechazado")
     r = await api.call(carlos, "PUT", f"/clients/{multi['id']}", json={"id": multi["id"], "full_name": multi["full_name"], "routes_ids": [a]})
     check(r.status_code in (403, 404), "un cobrador no puede cambiar las rutas del cliente", str(r.status_code))
     r = await api.call(carlos, "PUT", f"/clients/{multi['id']}", json={"id": multi["id"], "full_name": multi["full_name"], "routes_ids": [a, b]})

@@ -64,3 +64,7 @@ Cambios de comportamiento: el cobrador ya no lista usuarios, no activa/desactiva
 - **Administrador vs Super:** un admin (03) no puede crear, editar ni activar/desactivar usuarios Super/dev; el Super sí. `qa_security` 77/77.
 - **Prioridad de clientes por ruta** (`scripts/qa_client_order.py`, 25/25): cliente en varias rutas con prioridad independiente en cada una, mover uno / varios / orden completo sin repetidos ni huecos, movimientos simultáneos, editar las rutas de un cliente y permisos. Migración `a3b4c5d6e7f8` (índice único `(cliente, ruta)` activo, fusión de duplicados y renumeración 1..n).
 - **Dashboard:** `portfolio_capital` e `portfolio_interest` (reparto proporcional del saldo); `qa_reports` 69/69 con el oráculo independiente actualizado.
+
+### Prioridad de clientes: revisión final
+
+`qa_client_order` 32/32: además de mover/ordenar/rutas, un cliente no puede salir de una ruta donde tiene un crédito con saldo (409) y un cobrador puede guardar al cliente si no cambia sus rutas. Regresión completa en verde: qa_security 77, qa_access 19, qa_loan_create 90, qa_mora_job 13, qa_liquidations 55, qa_liquidations_flow 60, qa_payment_history 31, qa_reports 69.

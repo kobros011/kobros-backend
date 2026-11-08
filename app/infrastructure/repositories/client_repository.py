@@ -13,6 +13,7 @@ from ..models.client_reference_model import ClientReferenceModel
 from ..models.route_model import RouteModel
 from ..models.client_route_model import ClientRouteModel
 from ..models.loan_model import LoanModel
+from ..models.payment_model import PaymentModel
 from sqlalchemy import func
 from ..repositories.client_route_repository import ClientRouteRepository
 from ..repositories.client_reference_repository import ClientReferenceRepository
@@ -264,12 +265,16 @@ class ClientRepository(AbstractClientRepository):
         route_repo = ClientRouteRepository(self.db)
 
         for route_id in to_remove:
-            pending = await self.db.execute(
-                select(func.count()).select_from(LoanModel)
-                .where(LoanModel.clientroute_id == current[route_id].id, LoanModel.active.is_not(False), LoanModel.pending_quotas > 0)
+            owed = await self.db.execute(
+                select(func.count()).select_from(PaymentModel)
+                .join(LoanModel, LoanModel.id == PaymentModel.loan_id)
+                .where(
+                    LoanModel.clientroute_id == current[route_id].id, LoanModel.active.is_not(False), PaymentModel.active.is_not(False),
+                    PaymentModel.value - func.coalesce(PaymentModel.applied, 0) > 0.01,
+                )
             )
-            if pending.scalar_one():
-                raise ConflictException("No puedes quitar una ruta en la que el cliente tiene créditos con cuotas pendientes")
+            if owed.scalar_one():
+                raise ConflictException("No puedes quitar una ruta en la que el cliente tiene créditos con saldo pendiente")
         for route_id in to_remove:
             current[route_id].active = False
         await self.db.flush()
