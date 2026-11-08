@@ -216,6 +216,21 @@ async def main() -> int:
     mine = [i for i in r.json() if i["client_id"] == client["id"]]
     check(bool(mine) and all(abs(i["client_beak"] - 20000) <= TOL for i in mine), "Cobro del día expone client_beak del cliente")
 
+    print("== 4b. Listado de créditos: filtro por cliente y alcance ==")
+    mine_client, mine_loan, _ = created["mayor"][0], created["mayor"][2], None
+    r = await api.call(sup, "GET", "/loans/", params={"client_id": mine_client["id"]})
+    ids = {i["client_id"] for i in r.json()}
+    check(r.status_code == 200 and ids == {mine_client["id"]}, "GET /loans?client_id= devuelve solo los créditos de ese cliente (historial correcto)", str(ids))
+    if other:
+        r = await api.call(other, "GET", "/loans/")
+        check(r.status_code == 200 and all(i["id"] != mine_loan["id"] for i in r.json()), "un usuario de otra marca no ve mis créditos en el listado")
+    if carlos:
+        r = await api.call(carlos, "GET", "/loans/", params={"page_size": 100})
+        route_ids = {i["route_id"] for i in (r.json()["items"] if isinstance(r.json(), dict) else r.json())}
+        async with async_session() as db:
+            allowed = {str(x.id) for x in (await db.execute(select(RouteModel))).scalars().all() if carlos.id in (x.allowed_users_ids or [])}
+        check(r.status_code == 200 and route_ids <= allowed, "un cobrador solo ve créditos de las rutas donde está asignado")
+
     print("== 5. Validaciones ==")
     client, cr = await new_client(api, sup, norte_route)
     for label, patch_body, code in [

@@ -85,6 +85,9 @@ class LoanRepository(AbstractLoanRepository):
             initial_date = filters_dict.get("initial_date", None)
             end_date = filters_dict.get("end_date", None)
             payment_method = filters_dict.get("payment_method", None)
+            client_id = filters_dict.get("client_id", None)
+            scope_brand = filters_dict.get("_brand_id", None)
+            scope_user = filters_dict.get("_assigned_user_id", None)
 
             stmt = select(LoanModel)
             stmt = (
@@ -123,6 +126,14 @@ class LoanRepository(AbstractLoanRepository):
 
             if route_id:
                 stmt = stmt.where(ClientRouteModel.route_id == route_id)
+
+            if client_id:
+                stmt = stmt.where(ClientRouteModel.cliente_id == client_id)
+
+            if scope_brand:
+                stmt = stmt.where(RouteModel.brand_id == scope_brand)
+            if scope_user:
+                stmt = stmt.where(RouteModel.allowed_users_ids.contains([scope_user]))
 
             if initial_date and end_date and initial_date != '' and end_date != '':
                 

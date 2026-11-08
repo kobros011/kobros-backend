@@ -8,7 +8,7 @@ from ...infrastructure.repositories.loan_repository import LoanRepository
 from ...use_cases.loan_cases import LoanUseCases
 from ..shemas.loan_shema import LoanRead, LoanUpdate, LoanCreate, LoanReadFull
 from ...use_cases.loan_cases import LoanUseCases
-from ...infrastructure.utils.require_authentication import require_authentication
+from ...infrastructure.utils.require_authentication import require_authentication, get_current_user
 from ...infrastructure.utils.require_role import require_role
 from ...infrastructure.models.user_model import UserModel
 
@@ -29,8 +29,9 @@ async def list_loans(
     request: Request,
     pagination: Optional[PaginationParams] = Depends(optional_pagination_params),
     usecases: LoanUseCases = Depends(get_loan_usecases),
+    user: UserModel = Depends(get_current_user),
 ):
-    return await usecases.list_loans(filters_from_request(request), pagination)
+    return await usecases.list_loans(filters_from_request(request), pagination, user)
 
 @router.post("/", response_model=LoanRead, status_code=status.HTTP_201_CREATED)
 async def create_loan(
