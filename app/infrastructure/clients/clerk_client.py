@@ -90,11 +90,15 @@ class ClerkClient:
             body["username"] = username
         if password is not None:
             body["password"] = password
+        result: dict[str, Any] = {}
+        if body:
+            result = await self._request("PATCH", f"/users/{clerk_user_id}", json=body)
         if type_user_code is not None:
-            body["public_metadata"] = {"type_user": type_user_code}
-        if not body:
-            return {}
-        return await self._request("PATCH", f"/users/{clerk_user_id}", json=body)
+            # Clerk ya no acepta public_metadata en PATCH /users/{id}: se mezcla con el endpoint de metadata.
+            result = await self._request(
+                "PATCH", f"/users/{clerk_user_id}/metadata", json={"public_metadata": {"type_user": type_user_code}}
+            )
+        return result
 
     async def get_user(self, clerk_user_id: str) -> dict[str, Any]:
         return await self._request("GET", f"/users/{clerk_user_id}")
