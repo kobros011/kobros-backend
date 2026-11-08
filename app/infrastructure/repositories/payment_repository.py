@@ -13,7 +13,8 @@ from ..models.client_model import ClientModel
 from ...presentation.shemas.payment_shema import PaymentUpdate
 from ...presentation.shemas.loan_shema import LoanCreate
 from ..utils.validator_errors import ValidatorErrors
-from ...core.exceptions import ConflictException, NotFoundException
+from ...core.exceptions import BadRequestException, ConflictException, NotFoundException
+from ...core.clock import today_bogota
 from ..utils.timedelta_pay_date import timedelta_pay_date, add_months
 from ..utils.Emun import PaymentStatus, PaymentMethod
 from ...presentation.shemas.payment_shema import PaymentFullRead, PaymentFilters, CollectionTodayRead
@@ -245,7 +246,7 @@ class PaymentRepository(AbstractPaymentRepository):
             user_message = ValidatorErrors.integrity_error(e)
             raise ConflictException(user_message)
         
-    async def pay_payment(self, id: UUID, value: float):
+    async def pay_payment(self, id: UUID, value: float, collected_by: Optional[UUID] = None):
         try:
             stmt = (
                 select(PaymentModel)
@@ -272,6 +273,12 @@ class PaymentRepository(AbstractPaymentRepository):
 
             applied = float(current_payment.applied or 0)
             value = float(value or 0)
+
+            # Solo se abona una cuota que vence hoy o ya venció, y que aún tiene saldo.
+            if current_payment.pay_date and current_payment.pay_date > today_bogota():
+                raise BadRequestException("La cuota aún no vence, no se puede abonar")
+            if applied >= float(current_payment.value or 0) - 0.01:
+                raise BadRequestException("La cuota ya está pagada")
             value_quota_fixed = float(loan.value_quota_fixed or 0)
 
             ## Se restan los valores aplicados anteriormente
@@ -299,6 +306,7 @@ class PaymentRepository(AbstractPaymentRepository):
                     client.beak = value - value_quota_fixed
             
             current_payment.applied = value
+            current_payment.collected_by = collected_by
 
             await self.db.commit()
 

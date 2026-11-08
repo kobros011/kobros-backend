@@ -21,7 +21,7 @@ class AbstractPaymentRepository(ABC):
         pass
 
     @abstractmethod
-    async def pay_payment(self, id: UUID, value: float):
+    async def pay_payment(self, id: UUID, value: float, collected_by: Optional[UUID] = None):
         pass
 
     @abstractmethod

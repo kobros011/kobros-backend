@@ -13,3 +13,9 @@ class ConflictException(AppException):
     """Excepción para conflictos, como duplicados."""
     def __init__(self, message: str = "Conflicto de datos"):
         super().__init__(message, status_code=409)
+
+
+class BadRequestException(AppException):
+    """Excepción para solicitudes que no cumplen una regla de negocio."""
+    def __init__(self, message: str = "Solicitud inválida"):
+        super().__init__(message, status_code=400)

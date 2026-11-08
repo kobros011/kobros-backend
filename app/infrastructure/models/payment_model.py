@@ -17,5 +17,8 @@ class PaymentModel(Base):
     liquidated: bool = Column(Boolean, default=False)
     date_liquidated = Column(Date, nullable=True)
 
+    # Usuario que registró el abono (NULL en pagos anteriores a esta columna).
+    collected_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
     loan_id = Column(UUID(as_uuid=True), ForeignKey("loans.id"))
     loan = relationship("LoanModel", back_populates="payments")

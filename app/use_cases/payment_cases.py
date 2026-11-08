@@ -18,8 +18,8 @@ class PaymentUseCases:
     async def list_payments_full(self, filters: PaymentFilters) -> List[PaymentFullRead]:
         return await self.repository.list_payments_full(filters)
     
-    async def pay_payment(self, id: UUID, value: float):
-        return await self.repository.pay_payment(id=id, value=value)
+    async def pay_payment(self, id: UUID, value: float, collected_by: Optional[UUID] = None):
+        return await self.repository.pay_payment(id=id, value=value, collected_by=collected_by)
     
     async def create_payment(self, payment: PaymentCreate) -> Optional[Payment]:
         new_payment = Payment(**payment.model_dump())

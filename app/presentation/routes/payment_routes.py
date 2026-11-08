@@ -7,7 +7,12 @@ from ...infrastructure.repositories.payment_repository import PaymentRepository
 from ...use_cases.payment_cases import PaymentUseCases
 from ..shemas.payment_shema import PaymentRead, PaymentUpdate, PaymentCreate
 from ...use_cases.payment_cases import PaymentUseCases
-from ...infrastructure.utils.require_authentication import require_authentication
+from ...infrastructure.utils.require_authentication import require_authentication, get_current_user
+from ...infrastructure.models.user_model import UserModel
+from ...infrastructure.repositories.payment_history_repository import PaymentHistoryRepository
+from ...use_cases.payment_history_cases import PaymentHistoryUseCases
+from ...core.pagination import PaginationParams, pagination_params
+from ..shemas.payment_history_shema import PaymentHistoryPage
 from ..shemas.payment_shema import PaymentFilters, PaymentFullRead, CollectionTodayRead
 from datetime import datetime, date as date_type
 
@@ -38,6 +43,16 @@ async def get_today_collection(
     collect_date = datetime.strptime(date, "%Y-%m-%d").date() if date else date_type.today()
     return await usecases.get_today_collection(route_id, collect_date)
 
+@router.get("/history", response_model=PaymentHistoryPage)
+async def payment_history(
+    loan_id: UUID = Query(...),
+    status: Optional[str] = Query(None, pattern="^(pagado|pendiente|mora)$"),
+    pagination: PaginationParams = Depends(pagination_params),
+    db: AsyncSession = Depends(get_db),
+    user: UserModel = Depends(get_current_user),
+):
+    return await PaymentHistoryUseCases(PaymentHistoryRepository(db), user).history(loan_id, status, pagination)
+
 @router.get("/{payment_id}", response_model=Optional[PaymentRead])
 async def read_payment(payment_id: UUID, usecases: PaymentUseCases = Depends(get_payment_usecases)):
     return await usecases.get_payment(payment_id)
@@ -51,8 +66,13 @@ async def update_payment(payment_in: PaymentUpdate, usecases: PaymentUseCases = 
     return await usecases.update_payment(payment=payment_in)
 
 @router.put("/{payment_id}/pay")
-async def pay_payment(payment_id: UUID, value: float = Query(None), usecases: PaymentUseCases = Depends(get_payment_usecases)):
-    return await usecases.pay_payment(payment_id, value)
+async def pay_payment(
+    payment_id: UUID,
+    value: float = Query(None),
+    usecases: PaymentUseCases = Depends(get_payment_usecases),
+    user: UserModel = Depends(get_current_user),
+):
+    return await usecases.pay_payment(payment_id, value, collected_by=user.id)
 
 @router.delete("/{payment_id}")
 async def delete_payment(payment_id: UUID, usecases: PaymentUseCases = Depends(get_payment_usecases)):

@@ -22,7 +22,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from httpx import ASGITransport, AsyncClient  # noqa: E402
-from sqlalchemy import select, text  # noqa: E402
+from sqlalchemy import func, select, text  # noqa: E402
 
 from app.core.clock import today_bogota  # noqa: E402
 from app.infrastructure.dababase.db import async_session, engine  # noqa: E402
@@ -278,9 +278,12 @@ async def mutations(api: Api, sup: UserModel, routes: dict, today: date) -> None
     """Operaciones reales con los endpoints de la app; los datos creados se CONSERVAN."""
     print("== 8. Operaciones en vivo (se conservan) ==")
     async with async_session() as db:
-        loan = (await db.execute(select(LoanModel).where(LoanModel.loan_number == 2004))).scalars().first()
+        # Cuota demo sin abonos que ya venció o vence hoy (el backend rechaza abonar cuotas futuras).
         pending = (await db.execute(
-            select(PaymentModel).where(PaymentModel.loan_id == loan.id, PaymentModel.status == "pendiente").order_by(PaymentModel.quota_number)
+            select(PaymentModel).join(LoanModel, LoanModel.id == PaymentModel.loan_id)
+            .where(LoanModel.loan_number.between(2001, 2012), LoanModel.active.is_(True),
+                   PaymentModel.pay_date <= today, func.coalesce(PaymentModel.applied, 0) == 0)
+            .order_by(PaymentModel.pay_date.desc(), PaymentModel.quota_number)
         )).scalars().first()
         concept = (await db.execute(select(ExpenseConceptModel).where(ExpenseConceptModel.concept == "Combustible", ExpenseConceptModel.brand_id == sup.brand_id))).scalars().first()
     before, daily_before = await kpis_of(api, sup)
