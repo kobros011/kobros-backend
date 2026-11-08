@@ -134,6 +134,22 @@ async def main() -> int:
         check(res.status_code >= 300, f"C) cobrador: {method} {path.replace(rid, '{ruta}').replace(pid, '{pago}').replace(client_id, '{cliente}').replace(str(julian.id), '{usuario}').replace(str(sup.id), '{usuario}').replace(str(norte.id), '{marca}')} → {res.status_code}",
               "El cobrador puede ejecutar una acción de administración")
 
+    print("\n== D) administrador vs super ==")
+    admin = users["admin_norte"]
+    fields = ("id", "username", "email", "full_name", "document_id", "linking_date", "address", "phone", "mobile", "city", "department", "type_user", "brand_id")
+    sup_json = (await api.call(sup, "GET", f"/users/{sup.id}")).json()
+    sup_body = {k: sup_json[k] for k in fields if k in sup_json}
+    r = await safe_call(admin, "PUT", f"/users/{sup.id}", json=sup_body)
+    check(r.status_code == 403, f"D) admin no puede editar a un super → {r.status_code}")
+    r = await safe_call(admin, "PUT", f"/users/{sup.id}/toggle")
+    check(r.status_code == 403, f"D) admin no puede activar/desactivar a un super → {r.status_code}")
+    r = await safe_call(admin, "POST", "/users/", json={**sup_body, "id": None, "username": f"qa_sec_{uuid4().hex[:6]}", "email": None, "password": "KobrosTest123", "type_user": "02"})
+    check(r.status_code == 403, f"D) admin no puede crear un super → {r.status_code}")
+    adm_json = (await api.call(sup, "GET", f"/users/{admin.id}")).json()
+    adm_body = {k: adm_json[k] for k in fields if k in adm_json}
+    r = await safe_call(sup, "PUT", f"/users/{admin.id}", json=adm_body)
+    check(r.status_code == 200, f"D) el super sí puede editar a un admin → {r.status_code}")
+
     failed = [name for ok, name in RESULTS if not ok]
     print(f"\n{len(RESULTS) - len(failed)}/{len(RESULTS)} verificaciones OK" + (f" — FALLAN {len(failed)}" if failed else ""))
     for name in failed:

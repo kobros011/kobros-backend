@@ -55,8 +55,6 @@ class LiquidationUseCases:
             raise NotFoundException("Liquidación no encontrada")
         if self.role in ("04", "05") and self.user.id not in (route.allowed_users_ids or []):
             raise NotFoundException("Liquidación no encontrada")
-        if self.role == "05" and data["collector_id"] != self.user.id:
-            raise NotFoundException("Liquidación no encontrada")
         return data
 
     def _require_admin(self) -> None:
@@ -84,8 +82,6 @@ class LiquidationUseCases:
         if self.role in ("04", "05"):
             rows = await self.repository.db.execute(select(RouteModel.id).where(RouteModel.allowed_users_ids.contains([self.user.id]), RouteModel.brand_id == self.user.brand_id))
             route_ids = [r[0] for r in rows.all()]
-        if self.role == "05":
-            collector_id = self.user.id
         items, total, totals = await self.repository.list_page(
             brand_id=brand_id, route_ids=route_ids, collector_id=collector_id, route_id=route_id, date_from=date_from, date_to=date_to,
             status=status, include_reopened=status == "reabierta", params=params)

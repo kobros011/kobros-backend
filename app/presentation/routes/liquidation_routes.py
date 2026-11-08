@@ -24,7 +24,7 @@ from ..shemas.liquidation_shema import (
 router = APIRouter()
 
 _ALL = ("01", "02", "03", "04", "05")  # dev, super, admin, socio, cobrador
-_OPERATE = ("01", "02", "03", "05")     # quienes pueden cerrar caja (el socio solo consulta)
+_OPERATE = ("01", "02", "03")           # solo administración cierra caja; cobrador y socio solo consultan
 
 
 def get_usecases(db: AsyncSession = Depends(get_db), user: UserModel = Depends(require_role(*_ALL))) -> LiquidationUseCases:

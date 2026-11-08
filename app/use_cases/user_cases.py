@@ -36,6 +36,7 @@ class UserUseCases:
         return await self.repository.list_users(filters, params)
 
     async def create_user(self, user: UserCreate) -> User:
+        self._ensure_can_manage(new_type=user.type_user)
         email = normalize_email(user.email)
         user_data = user.model_dump(exclude=["password"])
         user_data["email"] = email
@@ -73,6 +74,7 @@ class UserUseCases:
     async def update_user(self, user: UserUpdate) -> User:
         existing = await self.repository.get_user_by_id(user.id)
         self._ensure_same_brand(existing)
+        self._ensure_can_manage(existing.type_user, user.type_user)
         type_user_code = user.type_user
         email = normalize_email(user.email)
 
@@ -105,6 +107,15 @@ class UserUseCases:
     async def update_password(self, uuid: UUID, password: str):
         new_password = get_password_hash(password)
         return await self.repository.update_password(uuid, new_password)
+
+    def _ensure_can_manage(self, target_type=None, new_type=None) -> None:
+        """Un administrador (03) no puede modificar ni crear usuarios Super (02) o dev (01); el super sí puede todo."""
+        actor_type = _type_user_code(self.user.type_user) if self.user else None
+        if actor_type != "03":
+            return
+        for kind in (target_type, new_type):
+            if kind is not None and _type_user_code(kind) in ("01", "02"):
+                raise HTTPException(status_code=403, detail="Un administrador no puede modificar usuarios Super")
 
     def _ensure_same_brand(self, target: User) -> None:
         """A brand-scoped actor (super/admin) may only act on users of their
@@ -142,6 +153,7 @@ class UserUseCases:
     async def toggle_user(self, user_id: UUID):
         existing = await self.repository.get_user_by_id(user_id)
         self._ensure_same_brand(existing)
+        self._ensure_can_manage(existing.type_user)
         clerk_id = existing.clerk_user_id
         result = await self.repository.toggle_user(user_id)
 
