@@ -168,6 +168,10 @@ async def main() -> int:
     pc = (await api.call(carlos, "GET", "/liquidations/preview", params={"route_id": str(route.id)})).json()
     check(abs(pc["collected_total"] - 200000) <= TOL and abs(pc["collected_overdue"] - 100000) <= TOL, "la cuota atrasada cobrada hoy SÍ entra al cierre de hoy (Carlos: $200.000)", str(pc["collected_total"]))
     check(abs(pc["new_loans_total"] - 400000) <= TOL and abs(pc["expenses_total"] - 20000) <= TOL, "créditos nuevos y gastos atribuidos a Carlos (400.000 / 20.000)")
+    nl = pc["new_loans"]
+    check(len(nl) == 1 and abs(nl[0]["value_capital"] - 400000) <= TOL and abs(nl[0]["value_total_loan"] - 600000) <= TOL and nl[0]["client_name"],
+          "los créditos nuevos de Carlos se listan con cliente, capital ($400.000) y total a pagar ($600.000)", str(nl))
+    check(abs(sum(x["value_capital"] for x in pc["new_loans"]) - pc["new_loans_total"]) <= TOL, "la suma de los créditos listados == total de créditos nuevos")
     pj = (await api.call(julian, "GET", "/liquidations/preview", params={"route_id": str(route.id)})).json()
     check(abs(pj["beak_generated"] - 30000) <= TOL and pj["partial_count"] == 1 and abs(pj["collected_total"] - 170000) <= TOL, "Julián: $170.000 con 1 parcial y $30.000 de excedente a favor")
 

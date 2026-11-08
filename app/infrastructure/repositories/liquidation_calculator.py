@@ -64,6 +64,14 @@ def _payments_from(stmt):
         ClientRouteModel, ClientRouteModel.id == LoanModel.clientroute_id)
 
 
+def loan_conditions_for(route_id: UUID, day: date, collector_id: Optional[UUID]) -> list:
+    """Créditos creados ese día (hora de Bogotá) en la ruta, por el cobrador si se indica."""
+    conditions = [ClientRouteModel.route_id == route_id, LoanModel.active.is_(True), func.date(func.timezone(BOGOTA_TZ, LoanModel.created_at)) == day]
+    if collector_id:
+        conditions.append(LoanModel.created_by == collector_id)
+    return conditions
+
+
 async def compute_figures(db: AsyncSession, route_id: UUID, day: date, collector_id: Optional[UUID], liquidation_id: Optional[UUID] = None) -> dict:
     applied = func.coalesce(PaymentModel.applied, 0)
     value = func.coalesce(PaymentModel.value, 0)
@@ -83,10 +91,7 @@ async def compute_figures(db: AsyncSession, route_id: UUID, day: date, collector
     spent = (await db.execute(select(func.coalesce(func.sum(ExpenseModel.value), 0)).where(
         *expense_conditions(route_id, day, collector_id, liquidation_id)))).scalar_one()
 
-    created_day = func.date(func.timezone(BOGOTA_TZ, LoanModel.created_at))
-    loan_conditions = [ClientRouteModel.route_id == route_id, LoanModel.active.is_(True), created_day == day]
-    if collector_id:
-        loan_conditions.append(LoanModel.created_by == collector_id)
+    loan_conditions = loan_conditions_for(route_id, day, collector_id)
     loans = (await db.execute(select(
         func.coalesce(func.sum(LoanModel.value_capital), 0).label("total"), func.count().label("count"),
     ).select_from(LoanModel).join(ClientRouteModel, ClientRouteModel.id == LoanModel.clientroute_id).where(*loan_conditions))).mappings().one()
@@ -127,6 +132,18 @@ async def payment_lines(db: AsyncSession, route_id: UUID, day: date, collector_i
         .where(*payment_conditions(route_id, day, collector_id, liquidation_id)).order_by(PaymentModel.updated_at)
     )).mappings().all()
     return [dict(r) for r in rows]
+
+
+async def new_loan_lines(db: AsyncSession, route_id: UUID, day: date, collector_id: Optional[UUID]) -> list[dict]:
+    rows = (await db.execute(
+        select(LoanModel.id, LoanModel.loan_number, LoanModel.value_capital, LoanModel.value_total_loan, LoanModel.agreed_quotas,
+               LoanModel.value_quota_fixed, LoanModel.payment_method, ClientModel.full_name.label("client_name"))
+        .select_from(LoanModel).join(ClientRouteModel, ClientRouteModel.id == LoanModel.clientroute_id)
+        .join(ClientModel, ClientModel.id == ClientRouteModel.cliente_id)
+        .where(*loan_conditions_for(route_id, day, collector_id)).order_by(LoanModel.created_at)
+    )).mappings().all()
+    return [{**r, "value_capital": float(r["value_capital"] or 0), "value_total_loan": float(r["value_total_loan"] or 0),
+             "value_quota_fixed": float(r["value_quota_fixed"] or 0)} for r in rows]
 
 
 def linked_payment_ids(route_id: UUID, day: date, collector_id: Optional[UUID]):

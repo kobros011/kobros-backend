@@ -227,6 +227,7 @@ class LiquidationRepository:
             current_total_charged=current["collected_total"], current_total_expenses=current["expenses_total"], current_new_loans=current["new_loans_total"],
             payments=await calc.payment_lines(self.db, route_id, day, collector_id, liquidation_id) if data["active"] else [],
             expenses=await calc.expense_lines(self.db, route_id, day, collector_id, liquidation_id) if data["active"] else [],
+            new_loans=await calc.new_loan_lines(self.db, route_id, day, collector_id),
         )
         return data
 
@@ -243,6 +244,7 @@ class LiquidationRepository:
             "expected_cash": calc.expected_cash(base, figures),
             "progress_percent": round(min(100.0, goal_paid / figures["goal"] * 100), 1) if figures["goal"] else 0.0,
             "expenses": await calc.expense_lines(self.db, route_id, day, collector_id),
+            "new_loans": await calc.new_loan_lines(self.db, route_id, day, collector_id),
             "existing_liquidation_id": existing["id"] if existing else None,
             "existing_status": existing["status"] if existing else None,
         }

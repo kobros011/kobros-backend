@@ -40,6 +40,17 @@ class PaymentLine(BaseModel):
     applied: float
 
 
+class NewLoanLine(BaseModel):
+    id: UUID
+    loan_number: int
+    client_name: str
+    value_capital: float
+    value_total_loan: float
+    agreed_quotas: int
+    value_quota_fixed: float
+    payment_method: str
+
+
 class ClosingFigures(BaseModel):
     goal: float
     collected_total: float
@@ -63,6 +74,7 @@ class LiquidationPreviewRead(ClosingFigures):
     expected_cash: float
     progress_percent: float
     expenses: List[ExpenseLine]
+    new_loans: List[NewLoanLine]
     existing_liquidation_id: Optional[UUID] = None
     existing_status: Optional[LiquidationStatus] = None
 
@@ -101,3 +113,4 @@ class LiquidationDetailRead(LiquidationRead):
     current_new_loans: float
     payments: List[PaymentLine]
     expenses: List[ExpenseLine]
+    new_loans: List[NewLoanLine]
