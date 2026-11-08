@@ -99,6 +99,8 @@ class RouteRepository(AbstractRouteRepository):
                 raise NotFoundException("Ruta no encontrada")
 
             update_data = route.model_dump(exclude_unset=True)
+            if update_data.get('currency') in (None, current_route.currency):
+                update_data.pop('currency', None)
 
             current_route = self.update_values(update_data, current_model=current_route)
 

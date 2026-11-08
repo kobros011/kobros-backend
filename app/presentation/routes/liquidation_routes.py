@@ -52,10 +52,11 @@ async def list_liquidations(
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
     status_filter: Optional[str] = Query(None, alias="status", pattern="^(pendiente|confirmada|reabierta)$"),
+    currency: Optional[str] = None,
     pagination: PaginationParams = Depends(pagination_params),
     usecases: LiquidationUseCases = Depends(get_usecases),
 ):
-    return await usecases.list(pagination, route_id=route_id, collector_id=collector_id, date_from=date_from, date_to=date_to, status=status_filter)
+    return await usecases.list(pagination, route_id=route_id, collector_id=collector_id, date_from=date_from, date_to=date_to, status=status_filter, currency=currency)
 
 
 @router.get("/{liquidation_id}", response_model=LiquidationDetailRead)

@@ -102,8 +102,10 @@ class LiquidationRepository:
 
     async def list_page(self, *, brand_id: Optional[UUID], route_ids: Optional[list], collector_id: Optional[UUID], route_id: Optional[UUID],
                         date_from: Optional[date], date_to: Optional[date], status: Optional[str], include_reopened: bool,
-                        params: PaginationParams) -> tuple[list[dict], int, dict]:
+                        params: PaginationParams, currency: Optional[str] = None) -> tuple[list[dict], int, dict]:
         stmt = _read_select()
+        if currency:
+            stmt = stmt.where(RouteModel.currency == currency)
         if brand_id is not None:
             stmt = stmt.where(RouteModel.brand_id == brand_id)
         if route_ids is not None:

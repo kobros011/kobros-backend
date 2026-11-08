@@ -226,11 +226,15 @@ async def main(mutate: bool) -> int:
     check(r.status_code == 404, "socio pidiendo la Ruta Sur → 404")
     sur_admin = users["admin_sur"]
     r = await api.call(sur_admin, "GET", "/reports/dashboard/summary", params={"brand_id": str(norte.id)})
-    check(r.status_code == 200 and r.json()["kpis"]["portfolio_total"] == 0 and r.json()["by_route"] == [], "admin_sur con brand_id de Norte → sin datos de Norte")
+    sur_scope = scope_of(raw, brand_id=sur_admin.brand_id, partner_id=None, route_id=None, collector_id=None)
+    sur_expected = compute_summary(raw, sur_scope, today, 90)
+    problems = diff(sur_expected, {k2: v for k2, v in r.json().items() if k2 != "critical_days"}) if r.status_code == 200 else ["status"]
+    check(r.status_code == 200 and not problems and all(x["route_name"] not in routes for x in r.json()["by_route"]), "admin_sur con brand_id de Norte → solo ve su marca (== oráculo de SUR, sin rutas de Norte)", "; ".join(problems[:4]))
     r = await api.call(sur_admin, "GET", "/reports/dashboard/summary", params={"route_id": str(routes["Ruta Norte"].id)})
     check(r.status_code == 404, "admin_sur con route_id de Norte → 404")
     r = await api.call(sur_admin, "GET", "/reports/portfolio", params={"brand_id": str(norte.id)})
-    check(r.status_code == 200 and r.json() == [], "admin_sur: /portfolio no filtra otras marcas aunque mande brand_id")
+    own = await api.call(sur_admin, "GET", "/reports/portfolio")
+    check(r.status_code == 200 and r.json() == own.json(), "admin_sur: /portfolio ignora el brand_id de otra marca (devuelve solo lo de la suya)")
     for path in ("/reports/dashboard/filters", "/reports/dashboard/summary", "/reports/dashboard/critical", "/reports/period?mode=weekly"):
         r = await api.call(users["collector_01"], "GET", path)
         check(r.status_code == 403, f"recaudador 403 en {path.split('?')[0]}")
@@ -244,7 +248,8 @@ async def main(mutate: bool) -> int:
     r = await api.call(sup, "GET", "/reports/dashboard/summary", params={"route_id": "00000000-0000-0000-0000-000000000000"})
     check(r.status_code == 404, "route_id inexistente → 404")
     r = await api.call(sur_admin, "GET", "/reports/dashboard/summary")
-    check(r.status_code == 200 and r.json()["kpis"]["portfolio_total"] == 0 and r.json()["daily"] == [], "marca sin créditos → ceros (no 500)")
+    problems = diff(sur_expected, {k2: v for k2, v in r.json().items() if k2 != "critical_days"}) if r.status_code == 200 else ["status"]
+    check(r.status_code == 200 and not problems, "marca pequeña (SUR) → summary == oráculo (sin datos de otras marcas, no 500)", "; ".join(problems[:4]))
     r = await api.call(sur_admin, "GET", "/reports/period", params={"mode": "annual"})
     check(r.status_code == 200 and len(r.json()["buckets"]) == 12 and r.json()["totals"]["margin"] == 0, "period sin datos → 12 buckets en 0")
 

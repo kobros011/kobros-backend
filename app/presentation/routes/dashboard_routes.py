@@ -55,9 +55,10 @@ async def dashboard_summary(
     collector_id: Optional[UUID] = None,
     brand_id: Optional[UUID] = None,
     days: int = Query(90, ge=1, le=365),
+    currency: Optional[str] = None,
     usecases: DashboardUseCases = Depends(get_dashboard_usecases),
 ):
-    return await usecases.summary(brand_id, route_id, collector_id, days)
+    return await usecases.summary(brand_id, route_id, collector_id, days, currency)
 
 
 @router.get("/dashboard/critical", response_model=Page[CriticalLoanRead])
@@ -67,9 +68,10 @@ async def dashboard_critical(
     brand_id: Optional[UUID] = None,
     text: Optional[str] = None,
     pagination: PaginationParams = Depends(critical_pagination),
+    currency: Optional[str] = None,
     usecases: DashboardUseCases = Depends(get_dashboard_usecases),
 ):
-    return await usecases.critical(brand_id, route_id, collector_id, text, pagination)
+    return await usecases.critical(brand_id, route_id, collector_id, text, pagination, currency)
 
 
 @router.get("/period", response_model=PeriodReportRead)
@@ -79,6 +81,7 @@ async def period_report(
     route_id: Optional[UUID] = None,
     collector_id: Optional[UUID] = None,
     brand_id: Optional[UUID] = None,
+    currency: Optional[str] = None,
     usecases: DashboardUseCases = Depends(get_dashboard_usecases),
 ):
-    return await usecases.period(brand_id, route_id, collector_id, mode, on_date)
+    return await usecases.period(brand_id, route_id, collector_id, mode, on_date, currency)

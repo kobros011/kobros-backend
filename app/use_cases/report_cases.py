@@ -32,8 +32,9 @@ class ReportUseCases:
         brand_id: Optional[UUID] = None,
         text: Optional[str] = None,
         params: Optional[PaginationParams] = None,
+        currency: Optional[str] = None,
     ) -> Union[Page[dict], List[dict]]:
-        items, total = await self.repository.list_portfolio(self._route_ids(route_id), self._effective_brand_id(brand_id), text, params)
+        items, total = await self.repository.list_portfolio(self._route_ids(route_id), self._effective_brand_id(brand_id), text, params, currency)
         return page_or_list(items, total, params)
 
     async def get_delinquency(
@@ -42,15 +43,16 @@ class ReportUseCases:
         brand_id: Optional[UUID] = None,
         text: Optional[str] = None,
         params: Optional[PaginationParams] = None,
+        currency: Optional[str] = None,
     ) -> Union[Page[dict], List[dict]]:
-        items, total = await self.repository.list_delinquency(self._route_ids(route_id), self._effective_brand_id(brand_id), text, params)
+        items, total = await self.repository.list_delinquency(self._route_ids(route_id), self._effective_brand_id(brand_id), text, params, currency)
         return page_or_list(items, total, params)
 
-    async def get_portfolio_summary(self, route_id: Optional[UUID] = None, brand_id: Optional[UUID] = None, text: Optional[str] = None) -> dict:
-        return await self.repository.portfolio_summary(self._route_ids(route_id), self._effective_brand_id(brand_id), text)
+    async def get_portfolio_summary(self, route_id: Optional[UUID] = None, brand_id: Optional[UUID] = None, text: Optional[str] = None, currency: Optional[str] = None) -> dict:
+        return await self.repository.portfolio_summary(self._route_ids(route_id), self._effective_brand_id(brand_id), text, currency)
 
-    async def get_delinquency_summary(self, route_id: Optional[UUID] = None, brand_id: Optional[UUID] = None, text: Optional[str] = None) -> dict:
-        return await self.repository.delinquency_summary(self._route_ids(route_id), self._effective_brand_id(brand_id), text)
+    async def get_delinquency_summary(self, route_id: Optional[UUID] = None, brand_id: Optional[UUID] = None, text: Optional[str] = None, currency: Optional[str] = None) -> dict:
+        return await self.repository.delinquency_summary(self._route_ids(route_id), self._effective_brand_id(brand_id), text, currency)
 
     async def get_client_payment_history(self, client_id: UUID) -> List[dict]:
         return await self.repository.get_client_payment_history(client_id)

@@ -1,12 +1,14 @@
 from fastapi import APIRouter, Depends, status, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.infrastructure.models.route_model import RouteModel
 from uuid import UUID
 from typing import Optional, List, Union
 from ...core.pagination import Page, PaginationParams, filters_from_request, optional_pagination_params
 from ...infrastructure.dababase.db import get_db
 from ...infrastructure.repositories.route_repository import RouteRepository
 from ...use_cases.route_cases import RouteUseCases
-from ..shemas.route_shema import RouteRead, RouteUpdate, RouteCreate
+from ..shemas.route_shema import RouteRead, RouteUpdate, RouteCreate, RouteCurrencyRead
 from ...use_cases.route_cases import RouteUseCases
 from app.infrastructure.models.user_model import UserModel
 from ...infrastructure.utils.require_authentication import require_authentication, get_current_user
@@ -24,6 +26,20 @@ def get_route_usecases(user: UserModel = Depends(require_authentication),reposit
     usecases.user = user
     repository.user = user 
     return usecases
+
+@router.get("/currencies", response_model=List[RouteCurrencyRead])
+async def list_route_currencies(
+    db: AsyncSession = Depends(get_db),
+    user: UserModel = Depends(get_current_user),
+):
+    """Moneda de cada ruta visible (activas e inactivas), para mostrar los valores del historial con su moneda."""
+    role = user.type_user.value
+    stmt = select(RouteModel.id, RouteModel.currency)
+    if role != "01":
+        stmt = stmt.where(RouteModel.brand_id == user.brand_id)
+    if role in ("04", "05"):
+        stmt = stmt.where(RouteModel.allowed_users_ids.contains([user.id]))
+    return [{"id": row[0], "currency": row[1]} for row in (await db.execute(stmt)).all()]
 
 @router.get("/{route_id}", response_model=Optional[RouteRead])
 async def read_route(

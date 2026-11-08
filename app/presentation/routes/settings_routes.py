@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ...core.currencies import catalog
 from ...infrastructure.dababase.db import get_db
 from ...infrastructure.models.user_model import UserModel
 from ...infrastructure.storage.azure_blob import AzureBlobStorage, get_storage
@@ -33,6 +34,12 @@ async def read_settings(
     usecases: SettingsUseCases = Depends(get_settings_usecases),
 ):
     return await usecases.get_settings(brand_id)
+
+
+@router.get("/currencies")
+async def read_currency_catalog():
+    """Monedas que una marca puede elegir (código, nombre, símbolo y decimales)."""
+    return catalog()
 
 
 @router.put("/", response_model=SettingsRead)

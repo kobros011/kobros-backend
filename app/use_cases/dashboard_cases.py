@@ -27,15 +27,15 @@ class DashboardUseCases:
             return requested
         return self.user.brand_id
 
-    async def _scope(self, brand_id: Optional[UUID], route_id: Optional[UUID], collector_id: Optional[UUID]) -> Scope:
-        return await self.repository.resolve_scope(self.user, self._effective_brand_id(brand_id), route_id, collector_id)
+    async def _scope(self, brand_id: Optional[UUID], route_id: Optional[UUID], collector_id: Optional[UUID], currency: Optional[str] = None) -> Scope:
+        return await self.repository.resolve_scope(self.user, self._effective_brand_id(brand_id), route_id, collector_id, currency)
 
     async def filters(self, brand_id: Optional[UUID]) -> dict:
         scope = await self._scope(brand_id, None, None)
         return {"routes": scope.all_routes, "collectors": scope.all_collectors}
 
-    async def summary(self, brand_id: Optional[UUID], route_id: Optional[UUID], collector_id: Optional[UUID], days: int) -> dict:
-        scope = await self._scope(brand_id, route_id, collector_id)
+    async def summary(self, brand_id: Optional[UUID], route_id: Optional[UUID], collector_id: Optional[UUID], days: int, currency: Optional[str] = None) -> dict:
+        scope = await self._scope(brand_id, route_id, collector_id, currency)
         return await self.repository.summary(scope, today_bogota(), days)
 
     async def critical(
@@ -45,8 +45,9 @@ class DashboardUseCases:
         collector_id: Optional[UUID],
         text: Optional[str],
         params: PaginationParams,
+        currency: Optional[str] = None,
     ):
-        scope = await self._scope(brand_id, route_id, collector_id)
+        scope = await self._scope(brand_id, route_id, collector_id, currency)
         items, total = await self.repository.critical(scope, today_bogota(), text, params)
         return build_page(items, total, params)
 
@@ -57,8 +58,9 @@ class DashboardUseCases:
         collector_id: Optional[UUID],
         mode: str,
         on_date: Optional[date],
+        currency: Optional[str] = None,
     ) -> dict:
-        scope = await self._scope(brand_id, route_id, collector_id)
+        scope = await self._scope(brand_id, route_id, collector_id, currency)
         route_ids = scope.route_ids
         latest = await self.repository.latest_movement_date(route_ids)
         reference = on_date or latest or today_bogota()

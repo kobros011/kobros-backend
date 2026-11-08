@@ -1,4 +1,4 @@
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -28,6 +28,8 @@ class SettingsRead(BaseModel):
     logo_mark_tone: Optional[LogoTone] = None
     number_format_style: NumberFormatStyle = "comma-thousands"
     number_decimals: Literal[0, 2] = 2
+    # Monedas de la marca (códigos ISO); la primera es la principal. Vacío = sin configurar.
+    currencies: List[str] = []
     # Falso si Azure no está configurado: el front deshabilita la subida de logo.
     logo_enabled: bool = False
 
@@ -41,6 +43,14 @@ class SettingsUpdate(BaseModel):
     primary_color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     number_format_style: NumberFormatStyle = "comma-thousands"
     number_decimals: Literal[0, 2] = 2
+    currencies: Optional[List[str]] = None  # None = no tocar las monedas
+
+    @field_validator("currencies", mode="before")
+    @classmethod
+    def _normalize_currencies(cls, value):
+        if value is None:
+            return None
+        return list(dict.fromkeys(str(code).strip().upper() for code in value if str(code).strip()))
 
     @field_validator("primary_color", mode="before")
     @classmethod

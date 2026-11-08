@@ -30,10 +30,11 @@ async def portfolio(
     route_id: Optional[UUID] = None,
     brand_id: Optional[UUID] = None,
     text: Optional[str] = None,
+    currency: Optional[str] = None,
     pagination: Optional[PaginationParams] = Depends(optional_pagination_params),
     usecases: ReportUseCases = Depends(get_report_usecases),
 ):
-    return await usecases.get_portfolio(route_id=route_id, brand_id=brand_id, text=text, params=pagination)
+    return await usecases.get_portfolio(route_id=route_id, brand_id=brand_id, text=text, params=pagination, currency=currency)
 
 
 @router.get("/portfolio/summary", response_model=ReportSummaryRead)
@@ -41,9 +42,10 @@ async def portfolio_summary(
     route_id: Optional[UUID] = None,
     brand_id: Optional[UUID] = None,
     text: Optional[str] = None,
+    currency: Optional[str] = None,
     usecases: ReportUseCases = Depends(get_report_usecases),
 ):
-    return await usecases.get_portfolio_summary(route_id=route_id, brand_id=brand_id, text=text)
+    return await usecases.get_portfolio_summary(route_id=route_id, brand_id=brand_id, text=text, currency=currency)
 
 
 @router.get("/delinquency", response_model=Union[Page[DelinquencyItemRead], List[DelinquencyItemRead]])
@@ -51,10 +53,11 @@ async def delinquency(
     route_id: Optional[UUID] = None,
     brand_id: Optional[UUID] = None,
     text: Optional[str] = None,
+    currency: Optional[str] = None,
     pagination: Optional[PaginationParams] = Depends(optional_pagination_params),
     usecases: ReportUseCases = Depends(get_report_usecases),
 ):
-    return await usecases.get_delinquency(route_id=route_id, brand_id=brand_id, text=text, params=pagination)
+    return await usecases.get_delinquency(route_id=route_id, brand_id=brand_id, text=text, params=pagination, currency=currency)
 
 
 @router.get("/delinquency/summary", response_model=ReportSummaryRead)
@@ -62,9 +65,10 @@ async def delinquency_summary(
     route_id: Optional[UUID] = None,
     brand_id: Optional[UUID] = None,
     text: Optional[str] = None,
+    currency: Optional[str] = None,
     usecases: ReportUseCases = Depends(get_report_usecases),
 ):
-    return await usecases.get_delinquency_summary(route_id=route_id, brand_id=brand_id, text=text)
+    return await usecases.get_delinquency_summary(route_id=route_id, brand_id=brand_id, text=text, currency=currency)
 
 
 @router.get("/clients/{client_id}/history", response_model=List[PaymentHistoryItemRead])

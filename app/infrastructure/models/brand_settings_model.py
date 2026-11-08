@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, ForeignKey
+from sqlalchemy import JSON, Column, String, Integer, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID as PD_UUID
 from app.infrastructure.dababase.base_class import Base
 
@@ -32,3 +32,5 @@ class BrandSettingsModel(Base):
 
     number_format_style = Column(String, nullable=False, default="comma-thousands", server_default="comma-thousands")
     number_decimals = Column(Integer, nullable=False, default=2, server_default="2")
+    # Códigos ISO de las monedas de la marca; la primera es la principal. Vacío = sin configurar (no hay moneda por defecto).
+    currencies = Column(JSON, nullable=False, default=list, server_default="[]")

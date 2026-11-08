@@ -76,7 +76,7 @@ class LiquidationUseCases:
                                             base=body.value_base_delivered, cash=body.cash_delivered, note=body.note, closed_by=self.user.id)
 
     async def list(self, params: PaginationParams, *, route_id: Optional[UUID], collector_id: Optional[UUID], date_from: Optional[date_type],
-                   date_to: Optional[date_type], status: Optional[str]) -> Page:
+                   date_to: Optional[date_type], status: Optional[str], currency: Optional[str] = None) -> Page:
         brand_id = None if self.role == "01" else self.user.brand_id
         route_ids = None
         if self.role in ("04", "05"):
@@ -84,7 +84,7 @@ class LiquidationUseCases:
             route_ids = [r[0] for r in rows.all()]
         items, total, totals = await self.repository.list_page(
             brand_id=brand_id, route_ids=route_ids, collector_id=collector_id, route_id=route_id, date_from=date_from, date_to=date_to,
-            status=status, include_reopened=status == "reabierta", params=params)
+            status=status, include_reopened=status == "reabierta", params=params, currency=currency)
         page = build_page(items, total, params)
         return LiquidationPage(**page.model_dump(), summary=totals)
 

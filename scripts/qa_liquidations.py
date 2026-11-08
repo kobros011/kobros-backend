@@ -29,6 +29,7 @@ from sqlalchemy import event, select, text  # noqa: E402
 
 import app.main  # noqa: E402,F401
 from app.core.clock import today_bogota  # noqa: E402
+from app.infrastructure.utils.route_currency import brand_currencies  # noqa: E402
 from app.infrastructure.dababase.db import async_session, engine  # noqa: E402
 from app.infrastructure.models.brand_model import BrandModel  # noqa: E402
 from app.infrastructure.models.expense_model import ExpenseConceptModel  # noqa: E402
@@ -46,9 +47,10 @@ BOGOTA = pytz.timezone("America/Bogota")
 ZERO_UUID = "00000000-0000-0000-0000-000000000000"
 
 
-async def new_route(allowed: list[UUID], brand_id, label: str) -> RouteModel:
+async def new_route(allowed: list[UUID], brand_id, label: str, currency: str | None = None) -> RouteModel:
     async with async_session() as db:
-        route = RouteModel(id=uuid4(), name=f"QD Liq {STAMP} {label}", initial_value=1_000_000, initial_expense=0,
+        currency = currency or (await brand_currencies(db, brand_id))[0]  # la principal de la marca
+        route = RouteModel(id=uuid4(), name=f"QD Liq {STAMP} {label}", initial_value=1_000_000, initial_expense=0, currency=currency,
                            opening_date=today_bogota(), brand_id=brand_id, allowed_users_ids=allowed, loans_number=0)
         db.add(route)
         await db.commit()

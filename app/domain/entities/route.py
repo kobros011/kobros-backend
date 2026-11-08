@@ -12,6 +12,7 @@ class Route(Base):
     initial_expense: float = ""
     opening_date: Optional[datetime] = None
     loans_number: int = 0
+    currency: str = ""
     allowed_users_ids: List[UUID] = Field(default_factory=List)
 
     brand_id: UUID = ""

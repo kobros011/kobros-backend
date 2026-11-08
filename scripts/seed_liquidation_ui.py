@@ -30,6 +30,7 @@ from app.infrastructure.dababase.db import async_session, engine  # noqa: E402
 from app.infrastructure.models.brand_model import BrandModel  # noqa: E402
 from app.infrastructure.models.route_model import RouteModel  # noqa: E402
 from app.infrastructure.models.user_model import UserModel  # noqa: E402
+from app.infrastructure.utils.route_currency import brand_currencies  # noqa: E402
 from scripts.qa_reports import Api  # noqa: E402
 
 engine.echo = False
@@ -49,7 +50,8 @@ async def main() -> int:
         carlos, admin, sup = users["qd_carlos"], users["admin_norte"], users["super_norte"]
         if route is None:
             route = RouteModel(id=uuid4(), name=ROUTE_NAME, initial_value=2_000_000, initial_expense=0, opening_date=today_bogota(),
-                               brand_id=brand.id, allowed_users_ids=[carlos.id, admin.id, sup.id], loans_number=0)
+                               brand_id=brand.id, allowed_users_ids=[carlos.id, admin.id, sup.id], loans_number=0,
+                               currency=(await brand_currencies(db, brand.id))[0])
             db.add(route)
             await db.commit()
             print(f"Ruta creada: {ROUTE_NAME}")

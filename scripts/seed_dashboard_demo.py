@@ -43,6 +43,7 @@ from app.infrastructure.models.models import UserType  # noqa: E402
 from app.infrastructure.models.payment_model import PaymentModel  # noqa: E402
 from app.infrastructure.models.route_model import RouteModel  # noqa: E402
 from app.infrastructure.models.user_model import UserModel  # noqa: E402
+from app.infrastructure.utils.route_currency import brand_currencies  # noqa: E402
 from app.infrastructure.utils.timedelta_pay_date import add_months  # noqa: E402
 from scripts.report_oracle import compute_critical, load_raw, scope_of  # noqa: E402
 
@@ -201,13 +202,14 @@ async def run(dry_run: bool) -> int:
             users["admin_norte"] = admin
 
         routes = {}
+        brand_currency = (await brand_currencies(s, brand.id))[0]  # la principal de la marca (sin moneda fija)
         for name, usernames in ROUTES.items():
             allowed = [users[u].id for u in usernames if users.get(u)]
             route, created = await ensure(
                 s, RouteModel, [RouteModel.name == name, RouteModel.brand_id == brand.id],
                 lambda n=name, a=allowed: RouteModel(
                     name=n, initial_value=5_000_000, initial_expense=100_000, opening_date=today - timedelta(days=200),
-                    loans_number=0, allowed_users_ids=a, brand_id=brand.id,
+                    loans_number=0, allowed_users_ids=a, brand_id=brand.id, currency=brand_currency,
                 ),
                 f"ruta {name}", dry_run,
             )

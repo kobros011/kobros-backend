@@ -28,6 +28,7 @@ class ReportRepository:
         *,
         delinquency: bool,
         today: date,
+        currency: Optional[str] = None,
     ) -> Select:
         """Cartera (créditos activos con saldo) o mora (con cuotas vencidas impagas), ambas sobre `loan_stats`
         para que Cartera, Cartera en mora y el Dashboard usen siempre las mismas cifras."""
@@ -68,6 +69,8 @@ class ReportRepository:
 
         if route_ids is not None:
             stmt = stmt.where(RouteModel.id.in_(route_ids))
+        if currency:
+            stmt = stmt.where(RouteModel.currency == currency)
         if brand_id:
             stmt = stmt.where(ClientModel.brand_id == brand_id)
         if text:
@@ -92,8 +95,9 @@ class ReportRepository:
         brand_id: Optional[UUID],
         text: Optional[str],
         params: Optional[PaginationParams],
+        currency: Optional[str] = None,
     ) -> Tuple[List[dict], int]:
-        stmt = self._stmt(route_ids, brand_id, text, delinquency=False, today=today_bogota())
+        stmt = self._stmt(route_ids, brand_id, text, delinquency=False, today=today_bogota(), currency=currency)
         rows, total = await paginate_mappings(self.db, stmt, params)
         return [self._round_row(r) for r in rows], total
 
@@ -103,24 +107,25 @@ class ReportRepository:
         brand_id: Optional[UUID],
         text: Optional[str],
         params: Optional[PaginationParams],
+        currency: Optional[str] = None,
     ) -> Tuple[List[dict], int]:
-        stmt = self._stmt(route_ids, brand_id, text, delinquency=True, today=today_bogota())
+        stmt = self._stmt(route_ids, brand_id, text, delinquency=True, today=today_bogota(), currency=currency)
         rows, total = await paginate_mappings(self.db, stmt, params)
         return [self._round_row(r) for r in rows], total
 
-    async def _summary(self, route_ids, brand_id, text, *, delinquency: bool) -> dict:
-        stmt = self._stmt(route_ids, brand_id, text, delinquency=delinquency, today=today_bogota()).order_by(None)
+    async def _summary(self, route_ids, brand_id, text, *, delinquency: bool, currency: Optional[str] = None) -> dict:
+        stmt = self._stmt(route_ids, brand_id, text, delinquency=delinquency, today=today_bogota(), currency=currency).order_by(None)
         sub = stmt.subquery()
         total_balance, count = (
             await self.db.execute(select(func.coalesce(func.sum(sub.c.balance), 0), func.count()).select_from(sub))
         ).one()
         return {"total_balance": round(float(total_balance), 2), "count": count}
 
-    async def portfolio_summary(self, route_ids: Optional[Sequence[UUID]], brand_id: Optional[UUID], text: Optional[str]) -> dict:
-        return await self._summary(route_ids, brand_id, text, delinquency=False)
+    async def portfolio_summary(self, route_ids: Optional[Sequence[UUID]], brand_id: Optional[UUID], text: Optional[str], currency: Optional[str] = None) -> dict:
+        return await self._summary(route_ids, brand_id, text, delinquency=False, currency=currency)
 
-    async def delinquency_summary(self, route_ids: Optional[Sequence[UUID]], brand_id: Optional[UUID], text: Optional[str]) -> dict:
-        return await self._summary(route_ids, brand_id, text, delinquency=True)
+    async def delinquency_summary(self, route_ids: Optional[Sequence[UUID]], brand_id: Optional[UUID], text: Optional[str], currency: Optional[str] = None) -> dict:
+        return await self._summary(route_ids, brand_id, text, delinquency=True, currency=currency)
 
     async def get_client_payment_history(self, client_id: UUID) -> List[dict]:
         stmt = (

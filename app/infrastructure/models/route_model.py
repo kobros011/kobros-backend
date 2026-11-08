@@ -12,6 +12,7 @@ class RouteModel(Base):
     initial_expense = Column(Float(2, True), nullable=False)
     opening_date = Column(Date, nullable=False)
     loans_number = Column(Integer, default=0, nullable=False)
+    currency = Column(String(3), nullable=False)  # una de las monedas de la marca
     allowed_users_ids = Column(ARRAY(UUID(as_uuid=True)), nullable=False, default=list)
 
     brand_id = Column(UUID(as_uuid=True), ForeignKey("brands.id"), nullable=False)

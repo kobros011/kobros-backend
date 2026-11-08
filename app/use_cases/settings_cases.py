@@ -7,7 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.exceptions import AppException, ConflictException, NotFoundException
+from app.core.currencies import is_valid
 from app.infrastructure.models.brand_model import BrandModel
+from app.infrastructure.models.route_model import RouteModel
 from app.infrastructure.models.brand_settings_model import BrandSettingsModel
 from app.infrastructure.models.user_model import UserModel
 from app.infrastructure.storage.azure_blob import AzureBlobStorage
@@ -93,6 +95,7 @@ class SettingsUseCases:
             logo_mark_tone=model.logo_mark_tone if model else None,
             number_format_style=(model.number_format_style if model else "comma-thousands"),
             number_decimals=(model.number_decimals if model else 2),
+            currencies=list(model.currencies or []) if model else [],
             logo_enabled=self.storage.is_configured,
         )
 
@@ -112,7 +115,11 @@ class SettingsUseCases:
         brand = await self._get_brand(brand_id)
         model = await self._get_or_create(brand_id)
         values = data.model_dump()
+        new_currencies = values.pop("currencies")
         new_name, new_code = values.pop("brand_name"), values.pop("brand_code")
+        if new_currencies is not None:
+            await self._validate_currencies(brand_id, new_currencies)
+            model.currencies = new_currencies
         if new_name:
             brand.name = new_name
         if new_code and new_code != brand.code:
@@ -128,6 +135,17 @@ class SettingsUseCases:
         await self.db.refresh(model)
         await self.db.refresh(brand)
         return self._to_read(brand, model)
+
+    async def _validate_currencies(self, brand_id: UUID, currencies: list[str]) -> None:
+        if not currencies:
+            raise AppException("Elige al menos una moneda", status_code=400)
+        invalid = [code for code in currencies if not is_valid(code)]
+        if invalid:
+            raise AppException(f"Monedas no válidas: {', '.join(invalid)}", status_code=400)
+        in_use = {row[0] for row in (await self.db.execute(select(RouteModel.currency).where(RouteModel.brand_id == brand_id).distinct())).all()}
+        removed = sorted(in_use - set(currencies))
+        if removed:
+            raise ConflictException(f"No puedes quitar {', '.join(removed)}: hay rutas que la usan")
 
     @staticmethod
     def _variant_fields(variant: LogoVariant) -> tuple[str, str, str, str]:
