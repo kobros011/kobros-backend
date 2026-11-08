@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
@@ -102,7 +102,7 @@ class LiquidationRepository:
 
     async def list_page(self, *, brand_id: Optional[UUID], route_ids: Optional[list], collector_id: Optional[UUID], route_id: Optional[UUID],
                         date_from: Optional[date], date_to: Optional[date], status: Optional[str], include_reopened: bool,
-                        params: PaginationParams) -> tuple[list[dict], int]:
+                        params: PaginationParams) -> tuple[list[dict], int, dict]:
         stmt = _read_select()
         if brand_id is not None:
             stmt = stmt.where(RouteModel.brand_id == brand_id)
@@ -124,9 +124,40 @@ class LiquidationRepository:
             stmt = stmt.where(LiquidationModel.reopened_at.isnot(None))
         elif not include_reopened:
             stmt = stmt.where(LiquidationModel.active.is_(True))
-        stmt = stmt.order_by(LiquidationModel.date.desc(), LiquidationModel.created_at.desc())
-        rows, total = await paginate_mappings(self.db, stmt, params)
-        return [_to_read(r) for r in rows], total
+        order = (LiquidationModel.created_at.asc(),) if status == "pendiente" else (LiquidationModel.date.desc(), LiquidationModel.created_at.desc())
+        totals = await self._totals(stmt)
+        rows, total = await paginate_mappings(self.db, stmt.order_by(*order), params)
+        items = [_to_read(r) for r in rows]
+        for item in items:
+            await self._flag_outdated(item)
+        return items, total, totals
+
+    async def _totals(self, filtered) -> dict:
+        """Totales de TODO el filtro (no solo de la página) para la fila "Totales período filtrado"."""
+        sub = filtered.order_by(None).subquery()
+        row = (await self.db.execute(select(
+            func.count().label("count"),
+            func.coalesce(func.sum(sub.c.total_value_charged), 0).label("collected"),
+            func.coalesce(func.sum(sub.c.total_value_expenses), 0).label("expenses"),
+            func.coalesce(func.sum(sub.c.value_new_loans), 0).label("new_loans"),
+            func.coalesce(func.sum(sub.c.new_loans_count), 0).label("new_loans_count"),
+            func.coalesce(func.sum(sub.c.expected_cash), 0).label("expected"),
+            func.coalesce(func.sum(sub.c.cash_delivered), 0).label("delivered"),
+            func.coalesce(func.sum(sub.c.difference), 0).label("difference"),
+        ).select_from(sub))).mappings().one()
+        return {k: (int(v) if k in ("count", "new_loans_count") else float(v)) for k, v in row.items()}
+
+    async def _flag_outdated(self, item: dict) -> None:
+        """Marca un cierre pendiente como desactualizado y cuantifica lo cobrado después del envío."""
+        item.update(outdated=False, outdated_amount=0.0, late_receipts=0)
+        if item["status"] != "pendiente" or not item["active"]:
+            return
+        current = await calc.compute_figures(self.db, item["route_id"], item["date"], item["collector_id"], item["id"])
+        gap = current["collected_total"] - item["total_value_charged"]
+        item["outdated"] = (abs(gap) > calc.TOLERANCE or abs(current["expenses_total"] - item["total_value_expenses"]) > calc.TOLERANCE
+                            or abs(current["new_loans_total"] - item["value_new_loans"]) > calc.TOLERANCE)
+        item["outdated_amount"] = round(max(gap, 0), 2)
+        item["late_receipts"] = max(current["receipts_count"] - item["receipts_count"], 0)
 
     # ---- cierre ----
     async def create(self, *, route_id: UUID, day: date, collector_id: Optional[UUID], base: float, cash: float, note: Optional[str]) -> dict:
@@ -137,7 +168,7 @@ class LiquidationRepository:
                 date=day, route_id=route_id, collector_id=collector_id,
                 today_collection_goal=figures["goal"], value_base_delivered=base,
                 total_value_charged=figures["collected_total"], total_value_expenses=figures["expenses_total"],
-                value_new_loans=figures["new_loans_total"], receipts_count=figures["receipts_count"],
+                value_new_loans=figures["new_loans_total"], receipts_count=figures["receipts_count"], new_loans_count=figures["new_loans_count"],
                 beak_generated=figures["beak_generated"], cash_delivered=cash, expected_cash=expected,
                 difference=round(cash - expected, 2), note=note,
             )

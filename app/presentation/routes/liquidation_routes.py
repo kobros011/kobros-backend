@@ -15,6 +15,7 @@ from ...use_cases.liquidation_cases import LiquidationUseCases
 from ..shemas.liquidation_shema import (
     LiquidationCreate,
     LiquidationDetailRead,
+    LiquidationPage,
     LiquidationNoteUpdate,
     LiquidationPreviewRead,
     LiquidationRead,
@@ -44,7 +45,7 @@ async def preview_liquidation(
     return await usecases.preview(route_id, day or today_bogota(), collector_id)
 
 
-@router.get("/", response_model=Page[LiquidationRead])
+@router.get("/", response_model=LiquidationPage)
 async def list_liquidations(
     route_id: Optional[UUID] = None,
     collector_id: Optional[UUID] = None,

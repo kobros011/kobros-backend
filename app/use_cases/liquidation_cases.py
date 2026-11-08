@@ -9,7 +9,7 @@ from ..core.pagination import Page, PaginationParams, build_page
 from ..infrastructure.models.route_model import RouteModel
 from ..infrastructure.models.user_model import UserModel
 from ..infrastructure.repositories.liquidation_repository import LiquidationRepository
-from ..presentation.shemas.liquidation_shema import LiquidationCreate
+from ..presentation.shemas.liquidation_shema import LiquidationCreate, LiquidationPage
 
 ADMIN_ROLES = ("01", "02", "03")
 
@@ -86,10 +86,11 @@ class LiquidationUseCases:
             route_ids = [r[0] for r in rows.all()]
         if self.role == "05":
             collector_id = self.user.id
-        items, total = await self.repository.list_page(
+        items, total, totals = await self.repository.list_page(
             brand_id=brand_id, route_ids=route_ids, collector_id=collector_id, route_id=route_id, date_from=date_from, date_to=date_to,
             status=status, include_reopened=status == "reabierta", params=params)
-        return build_page(items, total, params)
+        page = build_page(items, total, params)
+        return LiquidationPage(**page.model_dump(), summary=totals)
 
     async def detail(self, liquidation_id: UUID) -> dict:
         await self._load(liquidation_id)

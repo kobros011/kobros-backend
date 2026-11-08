@@ -25,6 +25,7 @@ class LiquidationModel(Base):
     expected_cash = Column(Float, nullable=True)
     difference = Column(Float, nullable=True)
     receipts_count = Column(Integer, nullable=False, default=0)
+    new_loans_count = Column(Integer, nullable=False, default=0)
     beak_generated = Column(Float, nullable=False, default=0)
     note = Column(Text, nullable=True)
     reopened_at = Column(DateTime(timezone=True), nullable=True)

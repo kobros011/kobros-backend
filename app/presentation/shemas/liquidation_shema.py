@@ -5,6 +5,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
+from ...core.pagination import Page
+
 LiquidationStatus = Literal["pendiente", "confirmada", "reabierta"]
 
 
@@ -95,6 +97,7 @@ class LiquidationRead(BaseModel):
     expected_cash: Optional[float] = None
     difference: Optional[float] = None
     receipts_count: int = 0
+    new_loans_count: int = 0
     beak_generated: float = 0
     note: Optional[str] = None
     status: LiquidationStatus
@@ -104,6 +107,28 @@ class LiquidationRead(BaseModel):
     reopened_at: Optional[datetime] = None
     active: bool
     created_at: datetime
+
+
+class LiquidationListItem(LiquidationRead):
+    # Solo se calcula para cierres pendientes (cuando hay cobros o gastos posteriores al cierre).
+    outdated: bool = False
+    outdated_amount: float = 0
+    late_receipts: int = 0
+
+
+class LiquidationTotals(BaseModel):
+    count: int
+    collected: float
+    expenses: float
+    new_loans: float
+    new_loans_count: int
+    expected: float
+    delivered: float
+    difference: float
+
+
+class LiquidationPage(Page[LiquidationListItem]):
+    summary: LiquidationTotals
 
 
 class LiquidationDetailRead(LiquidationRead):
