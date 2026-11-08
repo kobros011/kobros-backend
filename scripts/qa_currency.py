@@ -132,7 +132,7 @@ async def main() -> int:
         check(abs(c["total_balance"] + u["total_balance"] - t["total_balance"]) <= TOL and c["count"] + u["count"] == t["count"], f"Reportes {kind}: COP + USD == total")
     listing = (await api.call(dev, "GET", "/reports/portfolio", params={**base, "currency": "USD"})).json()
     rows = listing if isinstance(listing, list) else listing["items"]
-    check(rows and all(x["route_id"] == str(usd_route.id) for x in rows), "Cartera con currency=USD solo trae créditos de rutas USD")
+    check(rows and all(mapping.get(x["route_id"]) == "USD" for x in rows), "Cartera con currency=USD solo trae créditos de rutas USD")
     period = await api.call(dev, "GET", "/reports/period", params={**base, "mode": "weekly", "currency": "USD"})
     check(period.status_code == 200, "el informe por período acepta currency", str(period.status_code))
     lq = await api.call(dev, "GET", "/liquidations/", params={**base, "currency": "USD", "page_size": 50})
