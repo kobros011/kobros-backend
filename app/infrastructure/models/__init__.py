@@ -9,3 +9,4 @@ from .client_route_model import ClientRouteModel
 from .loan_model import LoanModel
 from .payment_model import PaymentModel
 from .route_movement_model import RouteMovementModel
+from .brand_settings_model import BrandSettingsModel
