@@ -147,6 +147,8 @@ class DashboardRepository:
         return {
             "kpis": {
                 "portfolio_total": _money(portfolio_total),
+                "portfolio_capital": _money(totals["capital"]),
+                "portfolio_interest": _money(portfolio_total - totals["capital"]),
                 "portfolio_loans": int(totals["loans"]),
                 "delinquency_total": _money(late_total),
                 "delinquency_loans": int(totals["late_loans"]),
@@ -185,6 +187,10 @@ class DashboardRepository:
                 ClientRouteModel.route_id.label("route_id"),
                 func.count().filter(in_portfolio).label("loans"),
                 func.coalesce(func.sum(stats.c.balance).filter(in_portfolio), 0).label("active"),
+                # Capital pendiente: el saldo se reparte entre capital e intereses en la misma proporción del crédito.
+                func.coalesce(func.sum(
+                    stats.c.balance * func.coalesce(LoanModel.value_capital, 0) / func.nullif(stats.c.value_total_loan, 0)
+                ).filter(in_portfolio), 0).label("capital"),
                 func.coalesce(func.sum(stats.c.value_total_loan).filter(in_portfolio), 0).label("lent"),
                 func.coalesce(func.sum(stats.c.paid).filter(in_portfolio), 0).label("paid"),
                 func.count().filter(late).label("late_loans"),
@@ -352,7 +358,7 @@ class DashboardRepository:
         return incomes, costs
 
 
-_EMPTY_TOTALS = {"loans": 0.0, "active": 0.0, "lent": 0.0, "paid": 0.0, "late_loans": 0.0, "late": 0.0, "mild": 0.0, "critical": 0.0}
+_EMPTY_TOTALS = {"loans": 0.0, "active": 0.0, "capital": 0.0, "lent": 0.0, "paid": 0.0, "late_loans": 0.0, "late": 0.0, "mild": 0.0, "critical": 0.0}
 
 
 def _money(value) -> float:

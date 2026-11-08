@@ -29,6 +29,8 @@ class DashboardFiltersRead(BaseModel):
 # ---- resumen ---------------------------------------------------------------
 class DashboardKpis(BaseModel):
     portfolio_total: float
+    portfolio_capital: float = 0.0
+    portfolio_interest: float = 0.0
     portfolio_loans: int
     delinquency_total: float
     delinquency_loans: int
