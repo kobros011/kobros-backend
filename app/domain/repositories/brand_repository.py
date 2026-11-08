@@ -4,6 +4,7 @@ from app.domain.entities.brand import Brand
 from typing import Optional, List
 from app.infrastructure.models.brand_model import BrandModel
 from app.infrastructure.models.user_model import UserModel
+from app.core.pagination import PaginationParams
 
 class AbstractBrandRepository(ABC):
     user: Optional[UserModel] = None
@@ -12,7 +13,7 @@ class AbstractBrandRepository(ABC):
         pass
 
     @abstractmethod
-    async def list_brands(self, filters) -> List[Brand]:
+    async def list_brands(self, filters, params: Optional[PaginationParams] = None) -> tuple[List[Brand], int]:
         pass
 
     @abstractmethod

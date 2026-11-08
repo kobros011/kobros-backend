@@ -13,6 +13,7 @@ from ...presentation.shemas.loan_shema import LoanUpdate, LoanCreate, LoansFilte
 from ...presentation.shemas.client_shema import ClientUpdate
 from ..utils.validator_errors import ValidatorErrors
 from ...core.exceptions import ConflictException, NotFoundException
+from ...core.pagination import PaginationParams, paginate_or_all
 from .client_route_repository import ClientRouteRepository
 from .client_repository import ClientRepository
 from .payment_repository import PaymentRepository
@@ -118,15 +119,12 @@ class LoanRepository(AbstractLoanRepository):
             user_message = ValidatorErrors.integrity_error(e)
             raise ConflictException(user_message)
 
-    async def list_loans(self, filters: LoansFilters) -> List[Loan]:
+    async def list_loans(self, filters: LoansFilters, params: Optional[PaginationParams] = None) -> tuple[List[Loan], int]:
         try:
-
-            query_stmt = await self.get_loans_by_params(params=filters)
-
-            result = await self.db.execute(query_stmt)
-            models = result.scalars().all()
-
-            return [self.model_to_entity_full(m) for m in models]
+            query_stmt = (await self.get_loans_by_params(params=filters)).order_by(
+                LoanModel.created_at.desc().nulls_last(), LoanModel.id.desc()
+            )
+            return await paginate_or_all(self.db, query_stmt, params, self.model_to_entity_full)
         except IntegrityError as e:
             user_message = ValidatorErrors.integrity_error(e)
             raise ConflictException(user_message)

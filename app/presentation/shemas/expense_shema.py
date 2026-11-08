@@ -9,12 +9,13 @@ class ExpenseConceptRead(BaseModel):
     keyIcon: str
     color: str
     brand_id: UUID
+    active: bool = True
 
 class ExpenseConceptCreate(BaseModel):
     concept: str
     keyIcon: str
     color: str
-    brand_id: UUID
+    brand_id: Optional[UUID] = None
 
 class ExpenseConceptUpdate(BaseModel):
     id: UUID
@@ -43,7 +44,7 @@ class ExpenseCreate(BaseModel):
     name: str
     expensesconcept_id: UUID
     route_id: UUID
-    user_generated: str
+    user_generated: Optional[str] = None
 
 class ExpenseUpdate(BaseModel):
     id: UUID

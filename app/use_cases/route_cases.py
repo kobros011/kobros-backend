@@ -4,6 +4,7 @@ from ..domain.repositories.route_repository import AbstractRouteRepository
 from ..domain.entities.route import Route
 from ..presentation.shemas.route_shema import RouteCreate, RouteUpdate, RouteFilters
 from app.infrastructure.models.user_model import UserModel
+from app.core.pagination import PaginationParams, page_or_list
 
 class RouteUseCases:
     user: Optional[UserModel] = None
@@ -14,8 +15,9 @@ class RouteUseCases:
     async def get_route(self, route_id: UUID) -> Optional[Route]:
         return await self.repository.get_route_by_id(route_id)
     
-    async def list_routes(self, filters: RouteFilters) -> List[Route]:
-        return await self.repository.list_routes(filters)
+    async def list_routes(self, filters: RouteFilters, params: Optional[PaginationParams] = None):
+        items, total = await self.repository.list_routes(filters, params)
+        return page_or_list(items, total, params)
     
     async def create_route(self, route: RouteCreate) -> Optional[Route]:
         new_route = Route(**route.model_dump())

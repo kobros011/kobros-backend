@@ -3,6 +3,7 @@ from typing import List, Optional
 from uuid import UUID
 from app.domain.entities.user import User
 from app.infrastructure.models.user_model import UserModel
+from app.core.pagination import PaginationParams
 from ...presentation.shemas.user_shema import UserFilters
 from dataclasses import fields
 from datetime import datetime
@@ -20,7 +21,7 @@ class AbstractUserRepository(ABC):
         pass
 
     @abstractmethod
-    async def list_users(self, filters: UserFilters) -> List[Optional[User]]:
+    async def list_users(self, filters: UserFilters, params: Optional[PaginationParams] = None) -> tuple[List[User], int]:
         pass
 
     @abstractmethod

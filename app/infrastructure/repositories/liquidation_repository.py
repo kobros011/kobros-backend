@@ -75,6 +75,7 @@ class LiquidationRepository(AbstractLiquidationRepository):
                 ExpenseModel.route_id == route_id,
                 ExpenseModel.date == liq_date,
                 ExpenseModel.liquidated == False,
+                ExpenseModel.active == True,
             )
         )
         expenses = expenses_result.scalars().all()

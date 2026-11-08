@@ -4,6 +4,7 @@ from app.domain.entities.route import Route
 from typing import Optional, List
 from app.infrastructure.models.route_model import RouteModel
 from app.infrastructure.models.user_model import UserModel
+from app.core.pagination import PaginationParams
 
 class AbstractRouteRepository(ABC):
     user: Optional[UserModel] = None
@@ -13,7 +14,7 @@ class AbstractRouteRepository(ABC):
         pass
 
     @abstractmethod
-    async def list_routes(self, filters) -> List[Route]:
+    async def list_routes(self, filters, params: Optional[PaginationParams] = None) -> tuple[List[Route], int]:
         pass
 
     @abstractmethod

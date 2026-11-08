@@ -1,4 +1,5 @@
 import os
+from typing import Optional, Union
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, status, Request
@@ -6,6 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from uuid import UUID
 
+from app.core.pagination import (
+    Page,
+    PaginationParams,
+    filters_from_request,
+    optional_pagination_params,
+    page_or_list,
+)
 from app.infrastructure.clients.clerk_client import ClerkApiError, ClerkClient
 from app.infrastructure.dababase.db import get_db
 from app.infrastructure.models.user_model import UserModel
@@ -57,11 +65,14 @@ async def create_user(
     return user_to_read(created)
 
 
-@router.get("/", response_model=list[UserRead])
-async def list_users(request: Request, usecases: UserUseCases = Depends(get_user_usecases)):
-    filters = dict(request.query_params)
-    users = await usecases.list_users(filters)
-    return [user_to_read(u) for u in users if u]
+@router.get("/", response_model=Union[Page[UserRead], list[UserRead]])
+async def list_users(
+    request: Request,
+    pagination: Optional[PaginationParams] = Depends(optional_pagination_params),
+    usecases: UserUseCases = Depends(get_user_usecases),
+):
+    users, total = await usecases.list_users(filters_from_request(request), pagination)
+    return page_or_list([user_to_read(u) for u in users if u], total, pagination)
 
 
 @router.get("/{user_id}", response_model=UserRead)

@@ -12,17 +12,38 @@ from ..models.client_model import ClientModel
 from ..models.client_reference_model import ClientReferenceModel
 from ..models.route_model import RouteModel
 from ..models.client_route_model import ClientRouteModel
+from ..models.loan_model import LoanModel
+from sqlalchemy import func
 from ..repositories.client_route_repository import ClientRouteRepository
 from ..repositories.client_reference_repository import ClientReferenceRepository
 from ...presentation.shemas.client_shema import ClientUpdate, ClientFilters, ClientCreate
 from app.infrastructure.utils.validator_errors import ValidatorErrors
 from app.core.exceptions import ConflictException, NotFoundException
+from app.core.pagination import PaginationParams, paginate_or_all
 
 
 class ClientRepository(AbstractClientRepository):
     def __init__(self, db: AsyncSession):
         self.db = db
     
+    async def _attach_active_loans_count(self, clients: List[Client]) -> None:
+        """Una sola consulta agrupada para los clientes de la página (evita N+1)."""
+        ids = [c.id for c in clients if c.id]
+        if not ids:
+            return
+        stmt = (
+            select(ClientRouteModel.cliente_id, func.count(LoanModel.id))
+            .join(LoanModel, LoanModel.clientroute_id == ClientRouteModel.id)
+            .where(ClientRouteModel.cliente_id.in_(ids))
+            .where(LoanModel.active == True)
+            .where(LoanModel.pending_quotas > 0)
+            .group_by(ClientRouteModel.cliente_id)
+        )
+        rows = (await self.db.execute(stmt)).all()
+        counts = {row[0]: row[1] for row in rows}
+        for client in clients:
+            client.active_loans_count = counts.get(client.id, 0)
+
     async def get_routes_id(self):
         routes = await self.db.execute(select(RouteModel.id).where(RouteModel.allowed_users_ids.contains([self.user.id])))
         routes_ids = [row[0] for row in routes.all()]
@@ -44,9 +65,7 @@ class ClientRepository(AbstractClientRepository):
         stmt = stmt.where(ClientModel.active==active)
 
         if len(routes_ids):
-            stmt = stmt.join(ClientModel.clientsroutes)
-            stmt = stmt.where(ClientRouteModel.route_id.in_(routes_ids))
-            stmt = stmt.distinct(ClientModel.id)
+            stmt = stmt.where(ClientModel.clientsroutes.any(ClientRouteModel.route_id.in_(routes_ids)))
 
         if text:
             stmt = stmt.where((ClientModel.full_name.ilike(f"%{text}%")) | (ClientModel.id_document.ilike(f"%{text}%")))
@@ -88,18 +107,16 @@ class ClientRepository(AbstractClientRepository):
             user_message = ValidatorErrors.integrity_error(e)
             raise ConflictException(user_message)
 
-    async def list_clients(self, filters) -> List[Client]:
+    async def list_clients(self, filters, params: Optional[PaginationParams] = None) -> tuple[List[Client], int]:
         try:
             if not self.user:
                 raise NotFoundException("Usuario no encontrado")
-            
-            
-            query_stmt = await self.get_queryset(filters)
-            query_stmt = query_stmt.options(selectinload(ClientModel.clientsroutes), selectinload(ClientModel.references))
-            result = await self.db.execute(query_stmt)
 
-            models = result.scalars().all()
-            return [self.model_to_entity(m) for m in models]
+            query_stmt = (await self.get_queryset(filters)).order_by(ClientModel.full_name, ClientModel.id)
+            query_stmt = query_stmt.options(selectinload(ClientModel.clientsroutes), selectinload(ClientModel.references))
+            items, total = await paginate_or_all(self.db, query_stmt, params, self.model_to_entity)
+            await self._attach_active_loans_count(items)
+            return items, total
         except IntegrityError as e:
             await self.db.rollback()
             user_message = ValidatorErrors.integrity_error(e)

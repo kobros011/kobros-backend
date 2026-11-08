@@ -4,6 +4,7 @@ from app.domain.entities.client import Client, ClientById
 from typing import Optional, List
 from app.infrastructure.models.client_model import ClientModel, RouteInfo
 from app.infrastructure.models.user_model import UserModel
+from app.core.pagination import PaginationParams
 from app.presentation.shemas.client_shema import ClientCreate, ClientUpdate
 from .client_route_repository import AbstractClientRouteRepository
 from sqlalchemy import inspect
@@ -20,7 +21,7 @@ class AbstractClientRepository(ABC):
         pass
 
     @abstractmethod
-    async def list_clients(self, filters) -> List[Client]:
+    async def list_clients(self, filters, params: Optional[PaginationParams] = None) -> tuple[List[Client], int]:
         pass
 
     @abstractmethod

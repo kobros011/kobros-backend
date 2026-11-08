@@ -13,6 +13,7 @@ from app.infrastructure.models.models import UserType
 from app.presentation.shemas.user_shema import UserUpdate
 from ..utils.validator_errors import ValidatorErrors
 from ...core.exceptions import ConflictException, NotFoundException
+from ...core.pagination import PaginationParams, paginate_or_all
 
 
 class UserRepository(AbstractUserRepository):
@@ -56,16 +57,13 @@ class UserRepository(AbstractUserRepository):
             user_message = ValidatorErrors.integrity_error(e)
             raise ConflictException(user_message)
 
-    async def list_users(self, filters) -> List[User]:
+    async def list_users(self, filters, params: Optional[PaginationParams] = None) -> tuple[List[User], int]:
         try:
             if not self.user:
                 raise NotFoundException("Usuario no encontrado")
 
-            query_stmt = await self.get_queryset(filters)
-
-            result = await self.db.execute(query_stmt)
-            models = result.scalars().all()
-            return [self.model_to_entity(m) for m in models]
+            query_stmt = (await self.get_queryset(filters)).order_by(UserModel.full_name, UserModel.id)
+            return await paginate_or_all(self.db, query_stmt, params, self.model_to_entity)
         except IntegrityError as e:
             user_message = ValidatorErrors.integrity_error(e)
             raise ConflictException(user_message)

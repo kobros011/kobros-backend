@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
-from typing import Optional, List
+from typing import Optional, List, Union
 
+from ...core.pagination import Page, PaginationParams, filters_from_request, optional_pagination_params
 from ...infrastructure.dababase.db import get_db
 from ...infrastructure.models.user_model import UserModel
 from ...infrastructure.repositories.brand_repository import BrandRepository
@@ -36,10 +37,13 @@ async def read_brand(brand_id: UUID, usecases: BrandUseCases = Depends(get_brand
     return await usecases.get_brand(brand_id)
 
 
-@router.get("/", response_model=List[BrandRead])
-async def list_brands(request: Request, usecases: BrandUseCases = Depends(get_brand_usecases)):
-    filters = dict(request.query_params)
-    return await usecases.list_brands(filters)
+@router.get("/", response_model=Union[Page[BrandRead], List[BrandRead]])
+async def list_brands(
+    request: Request,
+    pagination: Optional[PaginationParams] = Depends(optional_pagination_params),
+    usecases: BrandUseCases = Depends(get_brand_usecases),
+):
+    return await usecases.list_brands(filters_from_request(request), pagination)
 
 
 @router.post("/", response_model=BrandRead, status_code=status.HTTP_201_CREATED)

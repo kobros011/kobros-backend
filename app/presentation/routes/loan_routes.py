@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
-from typing import Optional, List
+from typing import Optional, List, Union
+from ...core.pagination import Page, PaginationParams, filters_from_request, optional_pagination_params
 from ...infrastructure.dababase.db import get_db
 from ...infrastructure.repositories.loan_repository import LoanRepository
 from ...use_cases.loan_cases import LoanUseCases
@@ -21,10 +22,13 @@ def get_loan_usecases(repository: LoanRepository = Depends(get_loan_repository))
 async def read_loan(loan_id: UUID, usecases: LoanUseCases = Depends(get_loan_usecases)):
     return await usecases.get_loan(loan_id)
 
-@router.get("/", response_model=List[LoanReadFull])
-async def list_loans(request: Request, usecases: LoanUseCases = Depends(get_loan_usecases)):
-    filters = dict(request.query_params)
-    return await usecases.list_loans(filters)
+@router.get("/", response_model=Union[Page[LoanReadFull], List[LoanReadFull]])
+async def list_loans(
+    request: Request,
+    pagination: Optional[PaginationParams] = Depends(optional_pagination_params),
+    usecases: LoanUseCases = Depends(get_loan_usecases),
+):
+    return await usecases.list_loans(filters_from_request(request), pagination)
 
 @router.post("/", response_model=LoanRead, status_code=status.HTTP_201_CREATED)
 async def create_loan(loan_in: LoanCreate, usecases: LoanUseCases = Depends(get_loan_usecases)):

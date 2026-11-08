@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
-from typing import Optional, List
+from typing import Optional, List, Union
+from ...core.pagination import Page, PaginationParams, filters_from_request, optional_pagination_params
 from ...infrastructure.dababase.db import get_db
 from ...infrastructure.repositories.route_repository import RouteRepository
 from ...use_cases.route_cases import RouteUseCases
@@ -25,10 +26,13 @@ def get_route_usecases(user: UserModel = Depends(require_authentication),reposit
 async def read_route(route_id: UUID, usecases: RouteUseCases = Depends(get_route_usecases)):
     return await usecases.get_route(route_id)
 
-@router.get("/", response_model=List[RouteRead])
-async def list_routes(request: Request, usecases: RouteUseCases = Depends(get_route_usecases)):
-    filters = dict(request.query_params)
-    return await usecases.list_routes(filters)
+@router.get("/", response_model=Union[Page[RouteRead], List[RouteRead]])
+async def list_routes(
+    request: Request,
+    pagination: Optional[PaginationParams] = Depends(optional_pagination_params),
+    usecases: RouteUseCases = Depends(get_route_usecases),
+):
+    return await usecases.list_routes(filters_from_request(request), pagination)
 
 @router.post("/", response_model=RouteRead, status_code=status.HTTP_201_CREATED)
 async def create_route(route_in: RouteCreate, usecases: RouteUseCases = Depends(get_route_usecases)):

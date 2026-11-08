@@ -4,6 +4,7 @@ from app.domain.entities.loan import Loan, LoanFull
 from app.presentation.shemas.loan_shema import LoanCreate, LoansFilters
 from typing import Optional, List
 from app.infrastructure.models.loan_model import LoanModel
+from app.core.pagination import PaginationParams
 
 
 class AbstractLoanRepository(ABC):
@@ -12,7 +13,7 @@ class AbstractLoanRepository(ABC):
         pass
 
     @abstractmethod
-    async def list_loans(self, filters: LoansFilters) -> List[LoanFull]:
+    async def list_loans(self, filters: LoansFilters, params: Optional[PaginationParams] = None) -> tuple[List[LoanFull], int]:
         pass
 
     @abstractmethod

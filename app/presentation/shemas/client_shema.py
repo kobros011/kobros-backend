@@ -38,6 +38,7 @@ class ClientRead(BaseModel):
     guarantor_phone: Optional[str] = None
     guarantor_address: Optional[str] = None
     references: List[ClientReferenceRead] = []
+    active_loans_count: int = 0
 
 
 class ClientMoreInfoRead(ClientRead):

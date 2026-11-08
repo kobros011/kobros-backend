@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, Request, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
-from typing import Optional, List
+from typing import Optional, List, Union
+from ...core.pagination import Page, PaginationParams, filters_from_request, optional_pagination_params
 from ...infrastructure.dababase.db import get_db
 from ...infrastructure.repositories.client_repository import ClientRepository
 from ...use_cases.client_cases import ClientUseCases
@@ -29,10 +30,13 @@ async def read_client(client_id: UUID, usecases: ClientUseCases = Depends(get_cl
 async def read_client(client_id: UUID, route_id: Optional[UUID] = Query(None), usecases: ClientUseCases = Depends(get_client_usecases)):
     return await usecases.get_client_more_info(client_id, route_id)
 
-@router.get("/", response_model=List[ClientRead])
-async def list_clients(request: Request, usecases: ClientUseCases = Depends(get_client_usecases)):
-    filters = dict(request.query_params)
-    return await usecases.list_clients(filters)
+@router.get("/", response_model=Union[Page[ClientRead], List[ClientRead]])
+async def list_clients(
+    request: Request,
+    pagination: Optional[PaginationParams] = Depends(optional_pagination_params),
+    usecases: ClientUseCases = Depends(get_client_usecases),
+):
+    return await usecases.list_clients(filters_from_request(request), pagination)
 
 @router.post("/", response_model=ClientRead, status_code=status.HTTP_201_CREATED)
 async def create_client(client_in: ClientCreate, usecases: ClientUseCases = Depends(get_client_usecases)):

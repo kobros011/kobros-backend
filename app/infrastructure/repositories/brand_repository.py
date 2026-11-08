@@ -9,6 +9,7 @@ from ..models.brand_model import BrandModel
 from ...presentation.shemas.brand_shema import BrandUpdate, BrandFilters
 from app.infrastructure.utils.validator_errors import ValidatorErrors
 from app.core.exceptions import ConflictException, NotFoundException
+from app.core.pagination import PaginationParams, paginate_or_all
 
 class BrandRepository(AbstractBrandRepository):
     def __init__(self, db:AsyncSession):
@@ -45,17 +46,14 @@ class BrandRepository(AbstractBrandRepository):
             user_message = ValidatorErrors.integrity_error(e)
             raise ConflictException(user_message)
 
-    async def list_brands(self, filters: BrandFilters) -> List[Brand]:
+    async def list_brands(self, filters: BrandFilters, params: Optional[PaginationParams] = None) -> tuple[List[Brand], int]:
         try:
             if not self.user:
                 raise NotFoundException("Usuario no encontrado")
-            
-            query_stmt = await self.get_queryset(filters)
-            
-            result = await self.db.execute(query_stmt)
-            models = result.scalars().all()
-            return [self.model_to_entity(m) for m in models]
-        
+
+            query_stmt = (await self.get_queryset(filters)).order_by(BrandModel.name, BrandModel.id)
+            return await paginate_or_all(self.db, query_stmt, params, self.model_to_entity)
+
         except IntegrityError as e:
             user_message = ValidatorErrors.integrity_error(e)
             raise ConflictException(user_message)

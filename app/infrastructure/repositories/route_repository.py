@@ -11,6 +11,7 @@ from ...presentation.shemas.route_shema import RouteUpdate, RouteFilters
 from ..utils.validator_errors import ValidatorErrors
 from ...core.exceptions import ConflictException, NotFoundException
 from ..models.models import UserType
+from ...core.pagination import PaginationParams, paginate_or_all
 
 class RouteRepository(AbstractRouteRepository):
     def __init__(self, db: AsyncSession):
@@ -63,16 +64,13 @@ class RouteRepository(AbstractRouteRepository):
         result = await self.db.execute(stmt)
         return result.scalars().first()
 
-    async def list_routes(self, filters: RouteFilters) -> List[Route]:
+    async def list_routes(self, filters: RouteFilters, params: Optional[PaginationParams] = None) -> tuple[List[Route], int]:
         try:
             if not self.user:
                 raise NotFoundException("Usuario no encontrado")
-            
-            query_stmt = await self.get_queryset(filters)
-            
-            result = await self.db.execute(query_stmt)
-            models = result.scalars().all()
-            return [self.model_to_entity(m) for m in models]
+
+            query_stmt = (await self.get_queryset(filters)).order_by(RouteModel.name, RouteModel.id)
+            return await paginate_or_all(self.db, query_stmt, params, self.model_to_entity)
         except IntegrityError as e:
             route_message = ValidatorErrors.integrity_error(e)
             raise ConflictException(route_message)

@@ -3,16 +3,21 @@ from uuid import UUID
 from app.domain.entities.expense import Expense, ExpenseConcept
 from typing import Optional, List
 from app.infrastructure.models.expense_model import ExpenseModel, ExpenseConceptModel
+from app.infrastructure.models.route_model import RouteModel
+from app.infrastructure.models.user_model import UserModel
 from sqlalchemy import inspect
 from app.presentation.shemas.expense_shema import ExpenseFilters
+from app.core.pagination import PaginationParams
 
 class AbstractExpenseConceptRepository(ABC):
+    user: Optional[UserModel] = None
+
     @abstractmethod
-    async def get_expense_concept_by_id(self, concept_id: UUID) -> Optional[ExpenseConcept]:
+    async def get_expense_concept_by_id(self, concept_id: UUID) -> ExpenseConcept:
         pass
 
     @abstractmethod
-    async def list_expense_concepts(self) -> List[ExpenseConcept]:
+    async def list_expense_concepts(self, filters: dict) -> List[ExpenseConcept]:
         pass
 
     @abstractmethod
@@ -21,6 +26,10 @@ class AbstractExpenseConceptRepository(ABC):
 
     @abstractmethod
     async def update_expense_concept(self, concept: ExpenseConcept) -> Optional[ExpenseConcept]:
+        pass
+
+    @abstractmethod
+    async def toggle_expense_concept(self, concept_id: UUID) -> ExpenseConcept:
         pass
 
     @abstractmethod
@@ -35,6 +44,7 @@ class AbstractExpenseConceptRepository(ABC):
             keyIcon=model.keyIcon,
             color=model.color,
             brand_id=model.brand_id,
+            active=model.active,
         )
     @staticmethod
     def entity_to_model(entity: ExpenseConcept) -> ExpenseConceptModel:
@@ -45,7 +55,7 @@ class AbstractExpenseConceptRepository(ABC):
             color=entity.color,
             brand_id=entity.brand_id,
         )
-    
+
     @staticmethod
     def update_values(update_data: dict[str, any], current_model: ExpenseModel):
         for key, value in update_data.items():
@@ -54,12 +64,24 @@ class AbstractExpenseConceptRepository(ABC):
         return current_model
 
 class AbstractExpenseRepository(ABC):
+    user: Optional[UserModel] = None
+
     @abstractmethod
-    async def get_expense_by_id(self, expense_id: UUID) -> Optional[Expense]:
+    async def get_route(self, route_id: UUID) -> RouteModel:
+        """Carga la ruta (sin bloqueo) para validar acceso por marca/usuario."""
         pass
 
     @abstractmethod
-    async def list_expenses(self, filters: ExpenseFilters) -> List[Expense]:
+    async def get_concept(self, concept_id: UUID) -> ExpenseConceptModel:
+        """Carga el concepto para validar que pertenece a la marca de la ruta."""
+        pass
+
+    @abstractmethod
+    async def get_expense_by_id(self, expense_id: UUID) -> Expense:
+        pass
+
+    @abstractmethod
+    async def list_expenses(self, filters: ExpenseFilters, params: Optional[PaginationParams] = None) -> tuple[List[Expense], int]:
         pass
 
     @abstractmethod
@@ -71,6 +93,10 @@ class AbstractExpenseRepository(ABC):
         pass
 
     @abstractmethod
+    async def toggle_expense(self, expense_id: UUID) -> Expense:
+        pass
+
+    @abstractmethod
     async def delete_expense(self, expense_id: UUID):
         pass
 
@@ -78,7 +104,7 @@ class AbstractExpenseRepository(ABC):
     def model_to_entity(model: ExpenseModel) -> Expense:
         state = inspect(model)
 
-        return Expense( 
+        return Expense(
             id=model.id,
             date=model.date,
             value=model.value,

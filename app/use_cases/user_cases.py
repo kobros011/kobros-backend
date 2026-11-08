@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import HTTPException
 
 from app.core.auth import get_password_hash
+from app.core.pagination import PaginationParams
 from app.domain.entities.user import User
 from app.domain.repositories.user_repository import AbstractUserRepository
 from app.infrastructure.clients.clerk_client import ClerkApiError, ClerkClient
@@ -31,8 +32,8 @@ class UserUseCases:
         self._ensure_same_brand(user)
         return user
 
-    async def list_users(self, filters: UserFilters) -> List[Optional[User]]:
-        return await self.repository.list_users(filters)
+    async def list_users(self, filters: UserFilters, params: Optional[PaginationParams] = None) -> tuple[List[User], int]:
+        return await self.repository.list_users(filters, params)
 
     async def create_user(self, user: UserCreate) -> User:
         email = normalize_email(user.email)
