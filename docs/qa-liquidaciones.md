@@ -53,3 +53,7 @@ Resultado: 73/73. Regresiones: qa_access 19/19, qa_liquidations 50/50, qa_liquid
 
 Cambios de comportamiento: el cobrador ya no lista usuarios, no activa/desactiva clientes, no crea/edita rutas ni crea/edita/borra pagos manuales;
 `GET /payments/` exige `loan_id` y `GET /clientroute/` exige `route_id`; Cartera/mora excluyen rutas inactivas (igual que el dashboard).
+
+## Job diario de mora (sin worker)
+
+`app/infrastructure/utils/default_scheduler.py` corre desde el `lifespan` del API: al arrancar y todos los días 00:05 (Bogotá). Pasa a `mora` las cuotas `pendiente` con `pay_date < hoy` sin cobrar (créditos y rutas activos) y suma su faltante a `loans.total_default`. Idempotente, con advisory lock. Se apaga con `MORA_JOB_ENABLED=false`. Manual/cron externo: `python scripts/mark_overdue_payments.py [--dry-run]`. QA: `scripts/qa_mora_job.py` (13/13).
