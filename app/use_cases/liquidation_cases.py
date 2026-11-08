@@ -75,7 +75,7 @@ class LiquidationUseCases:
         self.repository.ensure_closable(body.date)
         collector_id = self._resolve_collector(route, body.collector_id)
         return await self.repository.create(route_id=body.route_id, day=body.date, collector_id=collector_id,
-                                            base=body.value_base_delivered, cash=body.cash_delivered, note=body.note)
+                                            base=body.value_base_delivered, cash=body.cash_delivered, note=body.note, closed_by=self.user.id)
 
     async def list(self, params: PaginationParams, *, route_id: Optional[UUID], collector_id: Optional[UUID], date_from: Optional[date_type],
                    date_to: Optional[date_type], status: Optional[str]) -> Page:

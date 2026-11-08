@@ -1,0 +1,30 @@
+# Plan de QA — Liquidaciones (cierre de caja)
+
+Script: `scripts/qa_liquidations_flow.py` (flujo completo, 2 escenarios) y `scripts/qa_liquidations.py` (reglas, permisos, rendimiento).
+Se ejecutan dentro del contenedor `api`; no borran nada (rutas y clientes `QD Liq …`).
+
+## Actores
+| Rol | Usuario | Hace |
+|---|---|---|
+| Cobrador (05) | `qd_carlos`, asignado a la ruta | Cobra cuotas, registra gastos y (escenario A) entrega créditos nuevos |
+| Admin (03) con la misma ruta | `admin_norte`, asignado a la ruta | Revisa la vista previa, cierra la caja a nombre del cobrador, confirma y reabre |
+
+## Escenario A — con créditos nuevos / Escenario B — sin créditos nuevos
+1. **Preparación:** ruta nueva con cobrador y admin asignados; 10 créditos con cuota de hoy, una atrasada, una para abono parcial y una para pago de más.
+2. **Cobrador cobra (10 recibos):** cuota de hoy, atrasada cobrada hoy, parcial ($40.000 de $100.000), excedente ($130.000 → $30.000 a favor) y 6 más.
+3. **Cobrador registra 2 gastos** ($25.000 y $18.000).
+4. **(Solo A)** el cobrador entrega 2 créditos nuevos ($300.000 y $200.000), con su lista.
+5. **Admin, vista previa** (a nombre del cobrador y consolidada): cada cifra == cálculo independiente sobre filas crudas (recaudo $1.070.000, gastos $43.000, créditos nuevos, excedente, parciales, meta).
+6. **Admin cierra la caja** con un faltante de $5.000 → esperado = base + recaudo − gastos − créditos nuevos; diferencia −$5.000; estado pendiente.
+7. **Guardado en lote:** el cierre usa **un solo `UPDATE` por tabla** (pagos y gastos), sin importar cuántos pagos incluya; cada pago y gasto queda con `liquidated=true`, `date_liquidated` (hoy, Colombia), `liquidated_by` (admin) y `liquidation_id`.
+8. Los pagos liquidados salen de **Cobro del día**; un segundo cierre del mismo cobrador y día → 409.
+9. **Permisos:** el cobrador no puede confirmar (403) ni reabrir (403).
+10. **Confirmar:** el admin confirma; el detalle lista recibos, gastos y créditos nuevos sin "desactualizado".
+11. **Reabrir:** 2 `UPDATE` en lote; pagos y gastos vuelven a `liquidated=false` con fecha, cierre y responsable vacíos; la vista previa recupera las mismas cifras; se vuelve a cerrar con diferencia 0 y se confirma; el historial muestra el cierre y los totales del filtro.
+
+## Cobertura adicional (`qa_liquidations.py`)
+Cobro atrasado entra al cierre del día, cierre por cobrador vs consolidado, doble cierre concurrente, "desactualizado" tras un cobro posterior (no se puede confirmar), permisos por marca / rol / ruta, fecha futura, listados paginados con totales, rendimiento (≤ 12 sentencias en la vista previa, ≤ 18 al cerrar).
+
+## Resultado (última corrida)
+- `qa_liquidations_flow.py`: 60/60 (A y B).
+- `qa_liquidations.py`: 50/50 · regresión `qa_reports.py` 69/69 · `qa_payment_history.py` 31/31 · `qa_loan_create.py` 87/87.

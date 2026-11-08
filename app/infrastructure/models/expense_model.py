@@ -19,6 +19,7 @@ class ExpenseModel(Base):
     liquidated = Column(Boolean, nullable=False, default=False, server_default="false")
     date_liquidated = Column(Date, nullable=True)
     liquidation_id = Column(UUID(as_uuid=True), ForeignKey("liquidations.id"), nullable=True)
+    liquidated_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
 
     route_id = Column(UUID(as_uuid=True), ForeignKey("routes.id"))

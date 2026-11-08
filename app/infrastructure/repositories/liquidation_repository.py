@@ -160,7 +160,7 @@ class LiquidationRepository:
         item["late_receipts"] = max(current["receipts_count"] - item["receipts_count"], 0)
 
     # ---- cierre ----
-    async def create(self, *, route_id: UUID, day: date, collector_id: Optional[UUID], base: float, cash: float, note: Optional[str]) -> dict:
+    async def create(self, *, route_id: UUID, day: date, collector_id: Optional[UUID], base: float, cash: float, note: Optional[str], closed_by: UUID) -> dict:
         try:
             figures = await calc.compute_figures(self.db, route_id, day, collector_id)
             expected = calc.expected_cash(base, figures)
@@ -176,10 +176,10 @@ class LiquidationRepository:
             await self.db.flush()
 
             today = today_bogota()
-            await self.db.execute(update(PaymentModel).where(PaymentModel.id.in_(calc.linked_payment_ids(route_id, day, collector_id)))
-                                  .values(liquidated=True, date_liquidated=today, liquidation_id=liquidation.id))
-            await self.db.execute(update(ExpenseModel).where(ExpenseModel.id.in_(calc.linked_expense_ids(route_id, day, collector_id)))
-                                  .values(liquidated=True, date_liquidated=today, liquidation_id=liquidation.id))
+            # Dos UPDATE en lote (uno por tabla), no pago por pago: marca liquidado, fecha, cierre y responsable.
+            mark = dict(liquidated=True, date_liquidated=today, liquidation_id=liquidation.id, liquidated_by=closed_by)
+            await self.db.execute(update(PaymentModel).where(PaymentModel.id.in_(calc.linked_payment_ids(route_id, day, collector_id))).values(**mark))
+            await self.db.execute(update(ExpenseModel).where(ExpenseModel.id.in_(calc.linked_expense_ids(route_id, day, collector_id))).values(**mark))
             await self.db.commit()
             return await self.get_read(liquidation.id)
         except IntegrityError as e:
@@ -204,10 +204,9 @@ class LiquidationRepository:
 
     async def _release(self, liquidation_id: UUID) -> None:
         """Devuelve pagos y gastos del cierre al estado "sin liquidar"."""
-        await self.db.execute(update(PaymentModel).where(PaymentModel.liquidation_id == liquidation_id)
-                              .values(liquidated=False, date_liquidated=None, liquidation_id=None))
-        await self.db.execute(update(ExpenseModel).where(ExpenseModel.liquidation_id == liquidation_id)
-                              .values(liquidated=False, date_liquidated=None, liquidation_id=None))
+        clear = dict(liquidated=False, date_liquidated=None, liquidation_id=None, liquidated_by=None)
+        await self.db.execute(update(PaymentModel).where(PaymentModel.liquidation_id == liquidation_id).values(**clear))
+        await self.db.execute(update(ExpenseModel).where(ExpenseModel.liquidation_id == liquidation_id).values(**clear))
 
     async def reopen(self, liquidation_id: UUID, reopened_by: UUID) -> dict:
         model = await self.get_model(liquidation_id)
