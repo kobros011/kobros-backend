@@ -41,3 +41,6 @@ Recorrido: **cobrador** (Cobro del día → ruta QD UI Liquidación): cobrar cuo
 ## Resultado de la prueba desde la interfaz (escenario A, con crédito nuevo)
 Cobrador `qd_carlos` (UI): 10 cobros en Cobro del día (cuotas de hoy con "Todo", pago de más $130.000, abono parcial $40.000, cobro total con 5 cuotas atrasadas), 2 gastos desde Gastos ($25.000 y $18.000) y un crédito nuevo ($300.000, con $100.000 de "Valor pagado hoy" → saldo a favor +$40.000). Admin (UI): Liquidaciones → ruta + cobrador → recaudo $1.070.000 (11 recibos), gastos $43.000, créditos nuevos −$300.000 (1), esperado $1.227.000; cierre con faltante de $5.000 → confirmar → reabrir. Tras reabrir: 11 pagos y 2 gastos con `liquidated=false` y sin fecha, cierre ni responsable.
 Hallazgo corregido: el historial del cliente en el asistente de crédito traía los créditos de TODO el sistema (el listado no filtraba por `client_id` ni por marca/ruta); ahora filtra por cliente y por alcance del usuario.
+
+## QA de alcance por id (`scripts/qa_access.py`, 19/19)
+Crédito y pago pedidos por id respetan marca, rol y ruta asignada: otra marca o un cobrador no asignado reciben 404; el cobrador no edita ni elimina créditos (403); cobrar un pago ajeno se rechaza sin mover dinero; listar pagos sin `loan_id` se rechaza (400).

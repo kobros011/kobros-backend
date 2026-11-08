@@ -9,6 +9,7 @@ from ..shemas.payment_shema import PaymentRead, PaymentUpdate, PaymentCreate
 from ...use_cases.payment_cases import PaymentUseCases
 from ...infrastructure.utils.require_authentication import require_authentication, get_current_user
 from ...infrastructure.models.user_model import UserModel
+from ...infrastructure.utils.access import ensure_loan_access, ensure_payment_access
 from ...infrastructure.repositories.payment_history_repository import PaymentHistoryRepository
 from ...use_cases.payment_history_cases import PaymentHistoryUseCases
 from ...core.pagination import PaginationParams, pagination_params
@@ -16,6 +17,7 @@ from ..shemas.payment_history_shema import PaymentHistoryPage
 from ..shemas.payment_shema import PaymentFilters, PaymentFullRead, CollectionTodayRead
 from datetime import datetime
 from ...core.clock import today_bogota
+from ...core.exceptions import BadRequestException
 
 router = APIRouter(dependencies=[Depends(require_authentication)])
 
@@ -27,7 +29,15 @@ def get_payment_usecases(repository: PaymentRepository = Depends(get_payment_rep
 
 
 @router.get("/", response_model=List[PaymentRead])
-async def list_payments(loan_id: Optional[UUID] = Query(None), usecases: PaymentUseCases = Depends(get_payment_usecases)):
+async def list_payments(
+    loan_id: Optional[UUID] = Query(None),
+    usecases: PaymentUseCases = Depends(get_payment_usecases),
+    db: AsyncSession = Depends(get_db),
+    user: UserModel = Depends(get_current_user),
+):
+    if loan_id is None:  # sin crédito devolvería los pagos de todas las marcas
+        raise BadRequestException("loan_id es requerido")
+    await ensure_loan_access(db, loan_id, user)
     return await usecases.list_payments(loan_id)
 
 @router.get("/full", response_model=List[PaymentFullRead])
@@ -55,7 +65,13 @@ async def payment_history(
     return await PaymentHistoryUseCases(PaymentHistoryRepository(db), user).history(loan_id, status, pagination)
 
 @router.get("/{payment_id}", response_model=Optional[PaymentRead])
-async def read_payment(payment_id: UUID, usecases: PaymentUseCases = Depends(get_payment_usecases)):
+async def read_payment(
+    payment_id: UUID,
+    usecases: PaymentUseCases = Depends(get_payment_usecases),
+    db: AsyncSession = Depends(get_db),
+    user: UserModel = Depends(get_current_user),
+):
+    await ensure_payment_access(db, payment_id, user)
     return await usecases.get_payment(payment_id)
 
 @router.post("/", response_model=PaymentRead, status_code=status.HTTP_201_CREATED)
@@ -72,7 +88,9 @@ async def pay_payment(
     value: float = Query(None),
     usecases: PaymentUseCases = Depends(get_payment_usecases),
     user: UserModel = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
+    await ensure_payment_access(db, payment_id, user)
     return await usecases.pay_payment(payment_id, value, collected_by=user.id)
 
 @router.delete("/{payment_id}")

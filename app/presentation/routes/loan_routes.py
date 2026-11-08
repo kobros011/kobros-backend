@@ -11,6 +11,7 @@ from ...use_cases.loan_cases import LoanUseCases
 from ...infrastructure.utils.require_authentication import require_authentication, get_current_user
 from ...infrastructure.utils.require_role import require_role
 from ...infrastructure.models.user_model import UserModel
+from ...infrastructure.utils.access import ensure_loan_access
 
 router = APIRouter(dependencies=[Depends(require_authentication)])
 
@@ -21,7 +22,13 @@ def get_loan_usecases(repository: LoanRepository = Depends(get_loan_repository))
     return LoanUseCases(repository)
 
 @router.get("/{loan_id}", response_model=Optional[LoanReadFull])
-async def read_loan(loan_id: UUID, usecases: LoanUseCases = Depends(get_loan_usecases)):
+async def read_loan(
+    loan_id: UUID,
+    usecases: LoanUseCases = Depends(get_loan_usecases),
+    db: AsyncSession = Depends(get_db),
+    user: UserModel = Depends(get_current_user),
+):
+    await ensure_loan_access(db, loan_id, user)
     return await usecases.get_loan(loan_id)
 
 @router.get("/", response_model=Union[Page[LoanReadFull], List[LoanReadFull]])
@@ -42,9 +49,21 @@ async def create_loan(
     return await usecases.create_loan(loan=loan_in, user=user)
 
 @router.put("/{loan_id}", response_model=LoanRead)
-async def update_loan(loan_in: LoanUpdate, usecases: LoanUseCases = Depends(get_loan_usecases)):
+async def update_loan(
+    loan_in: LoanUpdate,
+    usecases: LoanUseCases = Depends(get_loan_usecases),
+    db: AsyncSession = Depends(get_db),
+    user: UserModel = Depends(require_role("01", "02", "03")),
+):
+    await ensure_loan_access(db, loan_in.id, user)
     return await usecases.update_loan(loan=loan_in)
 
 @router.delete("/{loan_id}")
-async def read_loan(loan_id: UUID, usecases: LoanUseCases = Depends(get_loan_usecases)):
+async def delete_loan(
+    loan_id: UUID,
+    usecases: LoanUseCases = Depends(get_loan_usecases),
+    db: AsyncSession = Depends(get_db),
+    user: UserModel = Depends(require_role("01", "02", "03")),
+):
+    await ensure_loan_access(db, loan_id, user)
     return await usecases.delete_loan(loan_id)
