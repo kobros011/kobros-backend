@@ -109,6 +109,8 @@ async def main() -> int:
     check(r.status_code == 200 and [x["route_id"] for x in r.json()["routes"]] == [a], "el detalle del cliente tampoco muestra la otra ruta", r.text[:160])
     r = await api.call(sup, "GET", f"/clients/{shared['id']}")
     check(len(r.json()["routes"]) == 2, "el super ve las dos rutas del cliente")
+    r = await api.call(admin, "PUT", f"/clients/{shared['id']}", json={"id": shared["id"], "full_name": f"QD AS compartido {STAMP} b"})
+    check(r.status_code == 200 and [x["route_id"] for x in r.json()["routes"]] == [a], "al editar el cliente la respuesta tampoco muestra la otra ruta", r.text[:160])
 
     print("== Liquidaciones y reportes ==")
     r = await api.call(admin, "GET", "/liquidations/", params={"page": 1, "page_size": 100})

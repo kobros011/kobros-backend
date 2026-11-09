@@ -208,6 +208,7 @@ class ClientRepository(AbstractClientRepository):
                     await self.db.commit()
 
                     entity = self.model_to_entity(await self._reload_client(orm_client.id))
+                    await self._limit_routes_to_scope([entity])
                     if created_loan is not None:
                         entity.loan_id, entity.loan_number = created_loan.id, created_loan.loan_number
                     return entity
@@ -278,7 +279,9 @@ class ClientRepository(AbstractClientRepository):
                 await self._sync_client_routes(current_client, routes_ids)
 
             await self.db.commit()
-            return self.model_to_entity(await self._reload_client(current_client.id))
+            entity = self.model_to_entity(await self._reload_client(current_client.id))
+            await self._limit_routes_to_scope([entity])
+            return entity
 
         except IntegrityError as e:
             await self.db.rollback()
