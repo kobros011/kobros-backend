@@ -18,12 +18,15 @@ from app.infrastructure.clients.clerk_client import ClerkApiError, ClerkClient
 from app.infrastructure.dababase.db import get_db
 from app.infrastructure.models.user_model import UserModel
 from app.infrastructure.repositories.user_repository import UserRepository
+from app.infrastructure.repositories.user_route_repository import UserRouteRepository
 from app.infrastructure.utils.require_authentication import require_authentication
 from app.infrastructure.utils.require_role import require_role
 from app.presentation.shemas.user_shema import (
     UserCreate,
     UserPasswordUpdate,
     UserRead,
+    UserRouteRead,
+    UserRouteRemoved,
     UserUpdate,
     user_to_read,
 )
@@ -96,6 +99,35 @@ async def update_user(
 ):
     updated = await usecases.update_user(user=user_in)
     return user_to_read(updated)
+
+
+@router.get("/{user_id}/routes", response_model=list[UserRouteRead])
+async def list_user_routes(
+    user_id: UUID,
+    actor: UserModel = Depends(require_role(*_SUPER_ROLES)),
+    db: AsyncSession = Depends(get_db),
+):
+    return await UserRouteRepository(db).list_for_user(actor, user_id)
+
+
+@router.put("/{user_id}/routes/{route_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def assign_user_route(
+    user_id: UUID,
+    route_id: UUID,
+    actor: UserModel = Depends(require_role(*_SUPER_ROLES)),
+    db: AsyncSession = Depends(get_db),
+):
+    await UserRouteRepository(db).assign(actor, user_id, route_id)
+
+
+@router.delete("/{user_id}/routes/{route_id}", response_model=UserRouteRemoved)
+async def remove_user_route(
+    user_id: UUID,
+    route_id: UUID,
+    actor: UserModel = Depends(require_role(*_SUPER_ROLES)),
+    db: AsyncSession = Depends(get_db),
+):
+    return await UserRouteRepository(db).unassign(actor, user_id, route_id)
 
 
 @router.put("/{user_id}/toggle")

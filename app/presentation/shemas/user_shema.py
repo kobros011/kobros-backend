@@ -71,6 +71,23 @@ class UserRead(BaseModel):
     active: bool
 
 
+class UserRouteRead(BaseModel):
+    """Ruta de la marca del usuario y si está asignado; los pendientes solo cuentan en las asignadas."""
+    route_id: UUID
+    name: str
+    currency: str
+    active: bool
+    assigned: bool
+    pending_payments: int = 0
+    open_liquidations: int = 0
+
+
+class UserRouteRemoved(BaseModel):
+    removed: bool
+    pending_payments: int = 0
+    open_liquidations: int = 0
+
+
 class UserUpdate(BaseModel):
     id: UUID
     username: str

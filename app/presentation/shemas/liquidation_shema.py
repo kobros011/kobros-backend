@@ -51,6 +51,7 @@ class NewLoanLine(BaseModel):
     agreed_quotas: int
     value_quota_fixed: float
     payment_method: str
+    created_by_name: Optional[str] = None
 
 
 class ClosingFigures(BaseModel):

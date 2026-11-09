@@ -6,6 +6,7 @@ from ..presentation.shemas.route_shema import RouteCreate, RouteUpdate, RouteFil
 from app.infrastructure.models.user_model import UserModel
 from app.core.pagination import PaginationParams, page_or_list
 from app.infrastructure.models.route_model import RouteModel
+from app.infrastructure.utils.route_users import validate_new_route_users
 from app.infrastructure.utils.route_currency import brand_currencies, ensure_can_change_currency, resolve_new_route_currency, validate_route_currency
 
 class RouteUseCases:
@@ -23,12 +24,15 @@ class RouteUseCases:
     
     async def create_route(self, route: RouteCreate) -> Optional[Route]:
         currency = await resolve_new_route_currency(self.repository.db, route.brand_id, route.currency)
+        await validate_new_route_users(self.repository.db, route.brand_id, route.allowed_users_ids)
         new_route = Route(**{**route.model_dump(), 'currency': currency})
         return await self.repository.create_route(new_route)
     
     async def update_route(self, route: RouteUpdate) -> Optional[Route]:
+        current = await self.repository.db.get(RouteModel, route.id)
+        if current is not None and route.allowed_users_ids is not None:
+            await validate_new_route_users(self.repository.db, current.brand_id, route.allowed_users_ids, current.allowed_users_ids or [])
         if route.currency is not None:
-            current = await self.repository.db.get(RouteModel, route.id)
             requested = route.currency.strip().upper()
             if current and requested != current.currency:
                 validate_route_currency(requested, await brand_currencies(self.repository.db, current.brand_id))

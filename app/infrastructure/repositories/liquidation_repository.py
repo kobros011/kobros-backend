@@ -243,7 +243,7 @@ class LiquidationRepository:
                 or abs(current["expenses_total"] - float(model.total_value_expenses or 0)) > calc.TOLERANCE
                 or abs(current["new_loans_total"] - float(model.value_new_loans or 0)) > calc.TOLERANCE)
 
-    async def detail(self, liquidation_id: UUID) -> dict:
+    async def detail(self, liquidation_id: UUID, hide_creator_for: Optional[UUID] = None) -> dict:
         data = await self.get_read(liquidation_id)
         day, route_id, collector_id = data["date"], data["route_id"], data["collector_id"]
         if data["active"]:
@@ -259,11 +259,11 @@ class LiquidationRepository:
             current_total_charged=current["collected_total"], current_total_expenses=current["expenses_total"], current_new_loans=current["new_loans_total"],
             payments=await calc.payment_lines(self.db, route_id, day, collector_id, liquidation_id) if data["active"] else [],
             expenses=await calc.expense_lines(self.db, route_id, day, collector_id, liquidation_id) if data["active"] else [],
-            new_loans=await calc.new_loan_lines(self.db, route_id, day, collector_id),
+            new_loans=await calc.new_loan_lines(self.db, route_id, day, collector_id, hide_creator_for),
         )
         return data
 
-    async def preview(self, route_id: UUID, day: date, collector_id: Optional[UUID]) -> dict:
+    async def preview(self, route_id: UUID, day: date, collector_id: Optional[UUID], hide_creator_for: Optional[UUID] = None) -> dict:
         route = await self.get_route(route_id)
         figures = await calc.compute_figures(self.db, route_id, day, collector_id)
         base = await self.last_base(route_id, collector_id)
@@ -276,7 +276,7 @@ class LiquidationRepository:
             "expected_cash": calc.expected_cash(base, figures),
             "progress_percent": round(min(100.0, goal_paid / figures["goal"] * 100), 1) if figures["goal"] else 0.0,
             "expenses": await calc.expense_lines(self.db, route_id, day, collector_id),
-            "new_loans": await calc.new_loan_lines(self.db, route_id, day, collector_id),
+            "new_loans": await calc.new_loan_lines(self.db, route_id, day, collector_id, hide_creator_for),
             "existing_liquidation_id": existing["id"] if existing else None,
             "existing_status": existing["status"] if existing else None,
         }

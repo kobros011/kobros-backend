@@ -24,6 +24,7 @@ from ..models.client_model import ClientModel
 from ..models.expense_model import ExpenseConceptModel, ExpenseModel
 from ..models.loan_model import LoanModel
 from ..models.payment_model import PaymentModel
+from ..models.user_model import UserModel
 
 BOGOTA_TZ = "America/Bogota"
 TOLERANCE = 0.01
@@ -65,11 +66,9 @@ def _payments_from(stmt):
 
 
 def loan_conditions_for(route_id: UUID, day: date, collector_id: Optional[UUID]) -> list:
-    """Créditos creados ese día (hora de Bogotá) en la ruta, por el cobrador si se indica."""
-    conditions = [ClientRouteModel.route_id == route_id, LoanModel.active.is_(True), func.date(func.timezone(BOGOTA_TZ, LoanModel.created_at)) == day]
-    if collector_id:
-        conditions.append(LoanModel.created_by == collector_id)
-    return conditions
+    """Créditos creados ese día (hora de Bogotá) en la ruta. Se muestran todos, sin importar quién los creó:
+    el dinero salió de la caja de la ruta ese día, la afecte o no el cobrador que liquida."""
+    return [ClientRouteModel.route_id == route_id, LoanModel.active.is_(True), func.date(func.timezone(BOGOTA_TZ, LoanModel.created_at)) == day]
 
 
 async def compute_figures(db: AsyncSession, route_id: UUID, day: date, collector_id: Optional[UUID], liquidation_id: Optional[UUID] = None) -> dict:
@@ -134,16 +133,21 @@ async def payment_lines(db: AsyncSession, route_id: UUID, day: date, collector_i
     return [dict(r) for r in rows]
 
 
-async def new_loan_lines(db: AsyncSession, route_id: UUID, day: date, collector_id: Optional[UUID]) -> list[dict]:
+async def new_loan_lines(db: AsyncSession, route_id: UUID, day: date, collector_id: Optional[UUID], hide_creator_for: Optional[UUID] = None) -> list[dict]:
+    """`hide_creator_for`: un cobrador viendo su propia caja no necesita ver su propio nombre como creador,
+    solo el de alguien más (admin/súper siempre ven el nombre, por eso pasan None)."""
     rows = (await db.execute(
         select(LoanModel.id, LoanModel.loan_number, LoanModel.value_capital, LoanModel.value_total_loan, LoanModel.agreed_quotas,
-               LoanModel.value_quota_fixed, LoanModel.payment_method, ClientModel.full_name.label("client_name"))
+               LoanModel.value_quota_fixed, LoanModel.payment_method, ClientModel.full_name.label("client_name"),
+               LoanModel.created_by, UserModel.full_name.label("created_by_name"))
         .select_from(LoanModel).join(ClientRouteModel, ClientRouteModel.id == LoanModel.clientroute_id)
         .join(ClientModel, ClientModel.id == ClientRouteModel.cliente_id)
+        .outerjoin(UserModel, UserModel.id == LoanModel.created_by)
         .where(*loan_conditions_for(route_id, day, collector_id)).order_by(LoanModel.created_at)
     )).mappings().all()
     return [{**r, "value_capital": float(r["value_capital"] or 0), "value_total_loan": float(r["value_total_loan"] or 0),
-             "value_quota_fixed": float(r["value_quota_fixed"] or 0)} for r in rows]
+             "value_quota_fixed": float(r["value_quota_fixed"] or 0),
+             "created_by_name": None if hide_creator_for and r["created_by"] == hide_creator_for else r["created_by_name"]} for r in rows]
 
 
 def linked_payment_ids(route_id: UUID, day: date, collector_id: Optional[UUID]):

@@ -101,7 +101,7 @@ class ClientCreate(BaseModel):
     current_address: str
     current_phone: str
     current_mobile: str
-    neighborhood: str
+    neighborhood: str = ""
     linking_date: datetime
     routes_ids: list[UUID] = []
     routes: List[ClientRouteInput] = []

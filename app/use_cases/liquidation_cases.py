@@ -62,9 +62,13 @@ class LiquidationUseCases:
             raise ForbiddenException("Solo un administrador puede hacer esta acción")
 
     # ---- casos de uso ----
+    def _hide_creator_for(self) -> Optional[UUID]:
+        """El cobrador no necesita ver su propio nombre como creador de un crédito, solo el de alguien más."""
+        return self.user.id if self.role == "05" else None
+
     async def preview(self, route_id: UUID, day: date_type, collector_id: Optional[UUID]) -> dict:
         route = await self._route(route_id)
-        return await self.repository.preview(route_id, day, self._resolve_collector(route, collector_id))
+        return await self.repository.preview(route_id, day, self._resolve_collector(route, collector_id), self._hide_creator_for())
 
     async def create(self, body: LiquidationCreate) -> dict:
         if self.role == "04":
@@ -90,7 +94,7 @@ class LiquidationUseCases:
 
     async def detail(self, liquidation_id: UUID) -> dict:
         await self._load(liquidation_id)
-        return await self.repository.detail(liquidation_id)
+        return await self.repository.detail(liquidation_id, self._hide_creator_for())
 
     async def confirm(self, liquidation_id: UUID) -> dict:
         self._require_admin()
