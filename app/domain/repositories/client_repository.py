@@ -37,6 +37,15 @@ class AbstractClientRepository(ABC):
         pass
 
     @staticmethod
+    def contacts_to_dicts(model: ClientModel) -> list[dict]:
+        """Fiadores primero y luego referencias; `is_primary` marca el primero de cada tipo."""
+        return [
+            {"id": str(c.id), "kind": c.kind, "name": c.name, "phone": c.phone, "address": c.address,
+             "position": c.position, "is_primary": c.position == 1}
+            for c in (model.contacts or [])
+        ]
+
+    @staticmethod
     def model_to_entity(model: ClientModel) -> Client:
         active_routes = [m for m in model.clientsroutes if m.active is not False]
         routes_ids = [m.route_id for m in active_routes]
@@ -44,10 +53,7 @@ class AbstractClientRepository(ABC):
             ({"route_id": m.route_id, "route_name": m.route.name if m.route else "", "clientroute_id": m.id, "order": m.order} for m in active_routes),
             key=lambda item: (item["route_name"], item["order"]),
         )
-        refs = [
-            {"id": str(r.id), "name": r.name, "address": r.address, "phone": r.phone}
-            for r in (model.references or [])
-        ]
+        contacts = AbstractClientRepository.contacts_to_dicts(model)
 
         return Client(
             id=model.id,
@@ -65,20 +71,13 @@ class AbstractClientRepository(ABC):
             brand_id=model.brand_id,
             created_at=model.created_at,
             updated_at=model.updated_at,
-            guarantor_name=model.guarantor_name,
-            guarantor_cedula=model.guarantor_cedula,
-            guarantor_phone=model.guarantor_phone,
-            guarantor_address=model.guarantor_address,
-            references=refs,
+            contacts=contacts,
         )
 
     @staticmethod
     def model_by_id_to_entity(model: ClientModel, route_id: Optional[UUID]) -> ClientById:
         more_info = model.get_route_info(route_id=route_id) if route_id else RouteInfo()
-        refs = [
-            {"id": str(r.id), "name": r.name, "address": r.address, "phone": r.phone}
-            for r in (model.references or [])
-        ]
+        contacts = AbstractClientRepository.contacts_to_dicts(model)
 
         return ClientById(
             id=model.id,
@@ -97,11 +96,7 @@ class AbstractClientRepository(ABC):
             brand_id=model.brand_id,
             created_at=model.created_at,
             updated_at=model.updated_at,
-            guarantor_name=model.guarantor_name,
-            guarantor_cedula=model.guarantor_cedula,
-            guarantor_phone=model.guarantor_phone,
-            guarantor_address=model.guarantor_address,
-            references=refs,
+            contacts=contacts,
         )
 
     @staticmethod

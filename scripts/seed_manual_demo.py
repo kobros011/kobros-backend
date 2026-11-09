@@ -40,7 +40,7 @@ DELETES = [
     ("liquidations", "DELETE FROM liquidations WHERE route_id IN (SELECT id FROM routes WHERE brand_id=:b)"),
     ("route_movements", "DELETE FROM route_movements WHERE route_id IN (SELECT id FROM routes WHERE brand_id=:b)"),
     ("clientsroutes", "DELETE FROM clientsroutes WHERE route_id IN (SELECT id FROM routes WHERE brand_id=:b) OR cliente_id IN (SELECT id FROM clients WHERE brand_id=:b)"),
-    ("client_references", "DELETE FROM client_references WHERE client_id IN (SELECT id FROM clients WHERE brand_id=:b)"),
+    ("client_contacts", "DELETE FROM client_contacts WHERE client_id IN (SELECT id FROM clients WHERE brand_id=:b)"),
     ("clients", "DELETE FROM clients WHERE brand_id=:b"),
     ("routes", "DELETE FROM routes WHERE brand_id=:b"),
 ]

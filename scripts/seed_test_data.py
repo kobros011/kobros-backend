@@ -30,7 +30,7 @@ from app.infrastructure.clients.clerk_client import ClerkClient
 from app.infrastructure.dababase.db import async_session
 from app.infrastructure.models.brand_model import BrandModel
 from app.infrastructure.models.client_model import ClientModel  # noqa: F401
-from app.infrastructure.models.client_reference_model import ClientReferenceModel  # noqa: F401
+from app.infrastructure.models.client_contact_model import ClientContactModel  # noqa: F401
 from app.infrastructure.models.client_route_model import ClientRouteModel  # noqa: F401
 from app.infrastructure.models.expense_model import ExpenseModel  # noqa: F401
 from app.infrastructure.models.liquidation_model import LiquidationModel  # noqa: F401

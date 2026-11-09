@@ -9,14 +9,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from typing import Optional, List
 from ..models.client_model import ClientModel
-from ..models.client_reference_model import ClientReferenceModel
 from ..models.route_model import RouteModel
 from ..models.client_route_model import ClientRouteModel
 from ..models.loan_model import LoanModel
 from ..models.payment_model import PaymentModel
 from sqlalchemy import func
 from ..repositories.client_route_repository import ClientRouteRepository
-from ..repositories.client_reference_repository import ClientReferenceRepository
+from ..repositories.client_contact_repository import ClientContactRepository
 from ...presentation.shemas.client_shema import ClientUpdate, ClientFilters, ClientCreate
 from app.infrastructure.utils.validator_errors import ValidatorErrors
 from app.core.exceptions import BadRequestException, ConflictException, ForbiddenException, NotFoundException
@@ -77,7 +76,7 @@ class ClientRepository(AbstractClientRepository):
         try:
             result = await self.db.execute(
                 select(ClientModel).where(ClientModel.id == client_id)
-                .options(selectinload(ClientModel.clientsroutes), selectinload(ClientModel.references))
+                .options(selectinload(ClientModel.clientsroutes), selectinload(ClientModel.contacts))
             )
             model = result.scalars().first()
             if not model:
@@ -112,7 +111,7 @@ class ClientRepository(AbstractClientRepository):
                 .options(
                     selectinload(ClientModel.clientsroutes)
                     .selectinload(ClientRouteModel.route),
-                    selectinload(ClientModel.references),
+                    selectinload(ClientModel.contacts),
                 )
             )
 
@@ -141,7 +140,7 @@ class ClientRepository(AbstractClientRepository):
                 query_stmt = query_stmt.order_by(priority, ClientModel.full_name, ClientModel.id)
             else:
                 query_stmt = query_stmt.order_by(ClientModel.full_name, ClientModel.id)
-            query_stmt = query_stmt.options(selectinload(ClientModel.clientsroutes), selectinload(ClientModel.references))
+            query_stmt = query_stmt.options(selectinload(ClientModel.clientsroutes), selectinload(ClientModel.contacts))
             items, total = await paginate_or_all(self.db, query_stmt, params, self.model_to_entity)
             await self._attach_active_loans_count(items)
             await self._attach_route_totals(items)
@@ -171,14 +170,10 @@ class ClientRepository(AbstractClientRepository):
             exists_client = await self.db.execute(stmt)
             exists_client = exists_client.scalars().first()
 
-            ref_repo = ClientReferenceRepository(self.db)
+            contact_repo = ClientContactRepository(self.db)
 
             if not exists_client:
-                    orm_client = self.entity_to_model(Client(**client.model_dump(exclude=["routes_ids", "routes", "references", "loan"])))
-                    orm_client.guarantor_name = client.guarantor_name
-                    orm_client.guarantor_cedula = client.guarantor_cedula
-                    orm_client.guarantor_phone = client.guarantor_phone
-                    orm_client.guarantor_address = client.guarantor_address
+                    orm_client = self.entity_to_model(Client(**client.model_dump(exclude=["routes_ids", "routes", "contacts", "loan"])))
                     self.db.add(orm_client)
                     await self.db.flush()
 
@@ -186,16 +181,12 @@ class ClientRepository(AbstractClientRepository):
 
                     created_loan = await self._create_first_loan(client, orm_client) if client.loan else None
 
-                    if client.references:
-                        await ref_repo.replace_for_client(
-                            orm_client.id,
-                            [r.model_dump() for r in client.references],
-                        )
+                    if client.contacts:
+                        await contact_repo.replace_for_client(orm_client.id, [c.model_dump() for c in client.contacts])
 
                     await self.db.commit()
-                    await self.db.refresh(orm_client, attribute_names=["clientsroutes", "references"])
 
-                    entity = self.model_to_entity(orm_client)
+                    entity = self.model_to_entity(await self._reload_client(orm_client.id))
                     if created_loan is not None:
                         entity.loan_id, entity.loan_number = created_loan.id, created_loan.loan_number
                     return entity
@@ -219,6 +210,15 @@ class ClientRepository(AbstractClientRepository):
             await self.db.rollback()
             raise
 
+    async def _reload_client(self, client_id: UUID) -> ClientModel:
+        """Cliente con rutas y contactos recién guardados (tras el commit los objetos quedan expirados)."""
+        result = await self.db.execute(
+            select(ClientModel).where(ClientModel.id == client_id)
+            .options(selectinload(ClientModel.clientsroutes), selectinload(ClientModel.contacts))
+            .execution_options(populate_existing=True)
+        )
+        return result.scalars().one()
+
     async def _create_first_loan(self, client: ClientCreate, orm_client: ClientModel):
         """Crédito del cliente recién creado en la ruta elegida, dentro de la transacción del cliente (sin commit)."""
         from ...presentation.shemas.loan_shema import LoanCreate
@@ -237,32 +237,27 @@ class ClientRepository(AbstractClientRepository):
         try:
             result = await self.db.execute(
                 select(ClientModel).where(ClientModel.id == client.id)
-                .options(selectinload(ClientModel.clientsroutes), selectinload(ClientModel.references))
+                .options(selectinload(ClientModel.clientsroutes), selectinload(ClientModel.contacts))
             )
             current_client = result.scalars().first()
 
             if not current_client:
                 raise NotFoundException("El cliente no fue encontrado")
 
-            references = client.references
+            contacts = client.contacts
             routes_ids = client.routes_ids
-            update_data = client.model_dump(exclude_unset=True, exclude={"references", "routes_ids"})
+            update_data = client.model_dump(exclude_unset=True, exclude={"contacts", "routes_ids"})
 
             current_client = self.update_values(update_data, current_model=current_client)
 
-            if references is not None:
-                ref_repo = ClientReferenceRepository(self.db)
-                await ref_repo.replace_for_client(
-                    current_client.id,
-                    [r.model_dump() for r in references],
-                )
+            if contacts is not None:
+                await ClientContactRepository(self.db).replace_for_client(current_client.id, [c.model_dump() for c in contacts])
 
             if routes_ids is not None:
                 await self._sync_client_routes(current_client, routes_ids)
 
             await self.db.commit()
-            await self.db.refresh(current_client, attribute_names=["clientsroutes", "references"])
-            return self.model_to_entity(current_client)
+            return self.model_to_entity(await self._reload_client(current_client.id))
 
         except IntegrityError as e:
             await self.db.rollback()

@@ -23,12 +23,10 @@ class ClientModel(Base):
     brand = relationship("BrandModel", back_populates="clients")
 
     clientsroutes = relationship("ClientRouteModel", back_populates="client")
-    references = relationship("ClientReferenceModel", back_populates="client", cascade="all, delete-orphan")
-
-    guarantor_name = Column(String, nullable=True)
-    guarantor_cedula = Column(String, nullable=True)
-    guarantor_phone = Column(String, nullable=True)
-    guarantor_address = Column(String, nullable=True)
+    contacts = relationship(
+        "ClientContactModel", back_populates="client", cascade="all, delete-orphan",
+        order_by="(ClientContactModel.kind, ClientContactModel.position)",
+    )
 
 
     def get_route_info(self, *, route_id: Optional[UUID] = None) -> Optional[RouteInfo]:

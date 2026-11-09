@@ -19,11 +19,7 @@ class Client(Base):
 
     brand_id: UUID = None
 
-    guarantor_name: Optional[str] = None
-    guarantor_cedula: Optional[str] = None
-    guarantor_phone: Optional[str] = None
-    guarantor_address: Optional[str] = None
-    references: List[Any] = field(default_factory=list)
+    contacts: List[Any] = field(default_factory=list)
     active_loans_count: int = 0
     loan_id: Optional[UUID] = None
     loan_number: Optional[int] = None

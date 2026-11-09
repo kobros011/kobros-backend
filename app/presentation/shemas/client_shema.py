@@ -2,20 +2,47 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from .loan_shema import LoanTerms
 from uuid import UUID
 from datetime import datetime
-from typing import Optional, List
+from typing import Literal, Optional, List
 
 
-class ClientReferenceRead(BaseModel):
+MAX_CONTACTS = 20
+
+
+class ClientContactRead(BaseModel):
     id: UUID
+    kind: Literal["fiador", "referencia"]
     name: str
+    phone: str
     address: Optional[str] = None
-    phone: Optional[str] = None
+    position: int = 1
+    is_primary: bool = False
 
 
-class ClientReferenceCreate(BaseModel):
-    name: str
+class ClientContactInput(BaseModel):
+    """Fiador o referencia del cliente: nombre y celular obligatorios, dirección opcional."""
+    kind: Literal["fiador", "referencia"]
+    name: str = Field(min_length=1)
+    phone: str = Field(min_length=1)
     address: Optional[str] = None
-    phone: Optional[str] = None
+
+    @field_validator("name", "phone")
+    @classmethod
+    def not_blank(cls, v: str):
+        v = v.strip()
+        if not v:
+            raise ValueError("Este dato es obligatorio")
+        return v
+
+    @field_validator("address")
+    @classmethod
+    def clean_address(cls, v: Optional[str]):
+        return (v or "").strip() or None
+
+
+def _limit_contacts(v):
+    if v is not None and len(v) > MAX_CONTACTS:
+        raise ValueError(f"Un cliente puede tener como máximo {MAX_CONTACTS} fiadores y referencias")
+    return v
 
 
 class ClientRouteInfoRead(BaseModel):
@@ -44,11 +71,7 @@ class ClientRead(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime]
 
-    guarantor_name: Optional[str] = None
-    guarantor_cedula: Optional[str] = None
-    guarantor_phone: Optional[str] = None
-    guarantor_address: Optional[str] = None
-    references: List[ClientReferenceRead] = []
+    contacts: List[ClientContactRead] = []
     active_loans_count: int = 0
     # Solo al crear el cliente junto con su primer crédito.
     loan_id: Optional[UUID] = None
@@ -85,18 +108,9 @@ class ClientCreate(BaseModel):
     loan: Optional[ClientLoanInput] = None
     brand_id: UUID
 
-    guarantor_name: Optional[str] = None
-    guarantor_cedula: Optional[str] = None
-    guarantor_phone: Optional[str] = None
-    guarantor_address: Optional[str] = None
-    references: List[ClientReferenceCreate] = []
+    contacts: List[ClientContactInput] = []
 
-    @field_validator("references")
-    @classmethod
-    def max_two_references(cls, v):
-        if len(v) > 2:
-            raise ValueError("El cliente puede tener mÃ¡ximo 2 referencias")
-        return v
+    _check_contacts = field_validator("contacts")(_limit_contacts)
 
     @model_validator(mode="after")
     def loan_route_in_routes(self):
@@ -124,18 +138,9 @@ class ClientUpdate(BaseModel):
     neighborhood: str = ""
     routes_ids: Optional[List[UUID]] = None  # None = no tocar las rutas del cliente
 
-    guarantor_name: Optional[str] = None
-    guarantor_cedula: Optional[str] = None
-    guarantor_phone: Optional[str] = None
-    guarantor_address: Optional[str] = None
-    references: Optional[List[ClientReferenceCreate]] = None
+    contacts: Optional[List[ClientContactInput]] = None  # None = no tocar; la lista reemplaza a la anterior
 
-    @field_validator("references")
-    @classmethod
-    def max_two_references(cls, v):
-        if v is not None and len(v) > 2:
-            raise ValueError("El cliente puede tener mÃ¡ximo 2 referencias")
-        return v
+    _check_contacts = field_validator("contacts")(_limit_contacts)
 
 
 class ClientFilters(BaseModel):

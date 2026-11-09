@@ -18,7 +18,7 @@ from app.infrastructure.models.loan_model import LoanModel  # noqa: F401
 from app.infrastructure.models.payment_model import PaymentModel  # noqa: F401
 from app.infrastructure.models.expense_model import ExpenseModel  # noqa: F401
 from app.infrastructure.models.liquidation_model import LiquidationModel  # noqa: F401
-from app.infrastructure.models.client_reference_model import ClientReferenceModel  # noqa: F401
+from app.infrastructure.models.client_contact_model import ClientContactModel  # noqa: F401
 from app.infrastructure.models.route_movement_model import RouteMovementModel  # noqa: F401
 from app.infrastructure.models.brand_settings_model import BrandSettingsModel  # noqa: F401
 from app.infrastructure.models.models import UserType  # noqa: F401
