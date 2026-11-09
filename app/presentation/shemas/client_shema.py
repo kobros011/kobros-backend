@@ -1,4 +1,5 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+from .loan_shema import LoanTerms
 from uuid import UUID
 from datetime import datetime
 from typing import Optional, List
@@ -49,12 +50,20 @@ class ClientRead(BaseModel):
     guarantor_address: Optional[str] = None
     references: List[ClientReferenceRead] = []
     active_loans_count: int = 0
+    # Solo al crear el cliente junto con su primer crédito.
+    loan_id: Optional[UUID] = None
+    loan_number: Optional[int] = None
 
 
 class ClientMoreInfoRead(ClientRead):
     route_name: Optional[str] = ""
     route_id: Optional[UUID] = None
     order: Optional[int] = None
+
+
+class ClientLoanInput(LoanTerms):
+    """Primer crédito del cliente nuevo: va en UNA de las rutas del cliente."""
+    route_id: UUID
 
 
 class ClientRouteInput(BaseModel):
@@ -73,6 +82,7 @@ class ClientCreate(BaseModel):
     linking_date: datetime
     routes_ids: list[UUID] = []
     routes: List[ClientRouteInput] = []
+    loan: Optional[ClientLoanInput] = None
     brand_id: UUID
 
     guarantor_name: Optional[str] = None
@@ -87,6 +97,12 @@ class ClientCreate(BaseModel):
         if len(v) > 2:
             raise ValueError("El cliente puede tener mÃ¡ximo 2 referencias")
         return v
+
+    @model_validator(mode="after")
+    def loan_route_in_routes(self):
+        if self.loan is not None and self.loan.route_id not in self.route_positions():
+            raise ValueError("La ruta del crédito debe ser una de las rutas del cliente")
+        return self
 
     def route_positions(self) -> dict[UUID, Optional[int]]:
         """Ruta -> prioridad pedida (None = al final). `routes` manda sobre `routes_ids`; sin repetidos."""

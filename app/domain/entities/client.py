@@ -25,6 +25,8 @@ class Client(Base):
     guarantor_address: Optional[str] = None
     references: List[Any] = field(default_factory=list)
     active_loans_count: int = 0
+    loan_id: Optional[UUID] = None
+    loan_number: Optional[int] = None
 
 @dataclass
 class ClientById(Client):

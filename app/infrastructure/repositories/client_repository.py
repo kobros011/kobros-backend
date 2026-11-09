@@ -174,7 +174,7 @@ class ClientRepository(AbstractClientRepository):
             ref_repo = ClientReferenceRepository(self.db)
 
             if not exists_client:
-                    orm_client = self.entity_to_model(Client(**client.model_dump(exclude=["routes_ids", "routes", "references"])))
+                    orm_client = self.entity_to_model(Client(**client.model_dump(exclude=["routes_ids", "routes", "references", "loan"])))
                     orm_client.guarantor_name = client.guarantor_name
                     orm_client.guarantor_cedula = client.guarantor_cedula
                     orm_client.guarantor_phone = client.guarantor_phone
@@ -183,6 +183,8 @@ class ClientRepository(AbstractClientRepository):
                     await self.db.flush()
 
                     await create_routes_client(orm_client.id)
+
+                    created_loan = await self._create_first_loan(client, orm_client) if client.loan else None
 
                     if client.references:
                         await ref_repo.replace_for_client(
@@ -193,7 +195,13 @@ class ClientRepository(AbstractClientRepository):
                     await self.db.commit()
                     await self.db.refresh(orm_client, attribute_names=["clientsroutes", "references"])
 
-                    return self.model_to_entity(orm_client)
+                    entity = self.model_to_entity(orm_client)
+                    if created_loan is not None:
+                        entity.loan_id, entity.loan_number = created_loan.id, created_loan.loan_number
+                    return entity
+
+            if client.loan:  # no se crea un crédito sobre un cliente que ya existía
+                raise ConflictException("Ya existe un cliente con ese nombre o documento; créale el crédito desde Créditos")
 
             if not exists_client.active:
                 await self.toggle_client(client_id=exists_client.id)
@@ -207,6 +215,23 @@ class ClientRepository(AbstractClientRepository):
             await self.db.rollback()
             user_message = ValidatorErrors.integrity_error(e)
             raise ConflictException(user_message)
+        except Exception:
+            await self.db.rollback()
+            raise
+
+    async def _create_first_loan(self, client: ClientCreate, orm_client: ClientModel):
+        """Crédito del cliente recién creado en la ruta elegida, dentro de la transacción del cliente (sin commit)."""
+        from ...presentation.shemas.loan_shema import LoanCreate
+        from .loan_repository import LoanRepository
+        loan_in = client.loan
+        link = (await self.db.execute(
+            select(ClientRouteModel).where(ClientRouteModel.cliente_id == orm_client.id, ClientRouteModel.route_id == loan_in.route_id, ClientRouteModel.active.is_not(False))
+        )).scalars().first()
+        if link is None:
+            raise BadRequestException("La ruta del crédito debe ser una de las rutas del cliente")
+        payload = LoanCreate(**loan_in.model_dump(exclude={"route_id"}), current_address=client.current_address, current_mobile=client.current_mobile,
+                             clientroute_id=link.id, client_id=orm_client.id)
+        return await LoanRepository(self.db).create_loan_in_tx(payload, self.user)
 
     async def update_client(self, client: ClientUpdate) -> Optional[Client]:
         try:

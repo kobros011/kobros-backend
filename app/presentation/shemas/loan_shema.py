@@ -37,32 +37,19 @@ class LoanReadFull(LoanRead):
     paid: Optional[float] = None
     balance: Optional[float] = None
 
-class LoanCreate(BaseModel):
-    # El servidor asigna el número real (route.loans_number + 1); el valor del cliente se ignora.
-    loan_number: Optional[int] = None
-    initial_date: Optional[datetime] = None
-    # La fecha final la fija el servidor: vencimiento de la última cuota (se ignora lo que mande el cliente).
-    end_date: Optional[datetime] = None
+class LoanTerms(BaseModel):
+    """Condiciones del crédito (las mismas en el asistente y al crearlo junto al cliente)."""
     value_quota_fixed: float = Field(gt=0)
     agreed_quotas: int = Field(ge=1)
     date_first_quota: datetime
     payment_method: str
     fixed_payment_day: Optional[int] = None
     value_capital: float = Field(gt=0)
-    # Se recalculan en el servidor (cuota × cuotas, utilidad, interés); se aceptan por compatibilidad con el front.
-    value_utility_loan: Optional[float] = None
-    value_total_loan: Optional[float] = None
-    interest_rate: Optional[float] = None
-    current_address: str
-    current_mobile: str
-    clientroute_id: UUID
-    client_id: UUID
-    new_order: Optional[int] = None
     # Cobro de la cuota 1 al crear (excedente → saldo a favor del cliente, faltante → mora parcial).
     value_payment: Optional[float] = Field(None, ge=0)
 
     @model_validator(mode="after")
-    def validate_loan(self):
+    def validate_terms(self):
         if self.payment_method not in {m.value for m in PaymentMethod}:
             raise ValueError("payment_method no es válido")
         if self.payment_method == PaymentMethod.FIXED_DATE.value:
@@ -72,6 +59,27 @@ class LoanCreate(BaseModel):
                 raise ValueError("fixed_payment_day debe estar entre 1 y 31")
         else:
             self.fixed_payment_day = None
+        return self
+
+
+class LoanCreate(LoanTerms):
+    # El servidor asigna el número real (route.loans_number + 1); el valor del cliente se ignora.
+    loan_number: Optional[int] = None
+    initial_date: Optional[datetime] = None
+    # La fecha final la fija el servidor: vencimiento de la última cuota (se ignora lo que mande el cliente).
+    end_date: Optional[datetime] = None
+    # Se recalculan en el servidor (cuota × cuotas, utilidad, interés); se aceptan por compatibilidad con el front.
+    value_utility_loan: Optional[float] = None
+    value_total_loan: Optional[float] = None
+    interest_rate: Optional[float] = None
+    current_address: str
+    current_mobile: str
+    clientroute_id: UUID
+    client_id: UUID
+    new_order: Optional[int] = None
+
+    @model_validator(mode="after")
+    def default_initial_date(self):
         if self.initial_date is None:
             self.initial_date = self.date_first_quota
         return self
