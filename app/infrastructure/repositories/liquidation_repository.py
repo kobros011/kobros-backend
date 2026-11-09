@@ -17,7 +17,6 @@ from ..models.route_model import RouteModel
 from ..models.user_model import UserModel
 from ..utils.validator_errors import ValidatorErrors
 from . import liquidation_calculator as calc
-from .report_repository import ReportRepository
 
 _COLLECTOR = aliased(UserModel)
 _CONFIRMER = aliased(UserModel)
@@ -95,17 +94,16 @@ class LiquidationRepository:
         row = (await self.db.execute(stmt)).mappings().first()
         return _to_read(row) if row else None
 
-    async def last_base(self, route: RouteModel, collector_id: Optional[UUID]) -> float:
-        """Base sugerida: la del último cierre activo de esa ruta/cobrador; si nunca hubo uno, la cartera
-        pendiente de la ruta (evita sugerir $0 y obligar al admin a digitarla a mano)."""
+    async def suggested_base(self, route: RouteModel, collector_id: Optional[UUID]) -> tuple[float, str]:
+        """Base sugerida y de dónde sale: la del último cierre activo de esa ruta/cobrador (`last_closure`); si nunca
+        hubo uno, lo que se le entrega al cobrador al empezar: valor inicial de la ruta menos sus gastos iniciales (`route_initial`)."""
         stmt = select(LiquidationModel.value_base_delivered).where(LiquidationModel.route_id == route.id, LiquidationModel.active.is_(True))
         stmt = stmt.where(LiquidationModel.collector_id == collector_id) if collector_id else stmt
         stmt = stmt.order_by(LiquidationModel.date.desc(), LiquidationModel.created_at.desc()).limit(1)
         last = (await self.db.execute(stmt)).scalar_one_or_none()
         if last is not None:
-            return float(last)
-        summary = await ReportRepository(self.db).portfolio_summary([route.id], route.brand_id, None, route.currency)
-        return float(summary["total_balance"])
+            return float(last), "last_closure"
+        return max(float(route.initial_value or 0) - float(route.initial_expense or 0), 0.0), "route_initial"
 
     async def list_page(self, *, brand_id: Optional[UUID], route_ids: Optional[list], collector_id: Optional[UUID], route_id: Optional[UUID],
                         date_from: Optional[date], date_to: Optional[date], status: Optional[str], include_reopened: bool,
@@ -273,13 +271,13 @@ class LiquidationRepository:
     async def preview(self, route_id: UUID, day: date, collector_id: Optional[UUID], hide_creator_for: Optional[UUID] = None) -> dict:
         route = await self.get_route(route_id)
         figures = await calc.compute_figures(self.db, route_id, day, collector_id)
-        base = await self.last_base(route, collector_id)
+        base, base_source = await self.suggested_base(route, collector_id)
         existing = await self.active_for(route_id, day, collector_id)
         goal_paid = figures["collected_due_today"]
         return {
             **figures,
             "route_id": route_id, "route_name": route.name, "collector_id": collector_id,
-            "collector_name": await self.user_name(collector_id), "date": day, "suggested_base": base,
+            "collector_name": await self.user_name(collector_id), "date": day, "suggested_base": base, "suggested_base_source": base_source,
             "expected_cash": calc.expected_cash(base, figures),
             "progress_percent": round(min(100.0, goal_paid / figures["goal"] * 100), 1) if figures["goal"] else 0.0,
             "expenses": await calc.expense_lines(self.db, route_id, day, collector_id, hide_creator_for=hide_creator_for),

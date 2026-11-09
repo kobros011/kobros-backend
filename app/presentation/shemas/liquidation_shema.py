@@ -75,6 +75,7 @@ class LiquidationPreviewRead(ClosingFigures):
     collector_name: Optional[str] = None
     date: date_type
     suggested_base: float
+    suggested_base_source: str = "last_closure"  # last_closure | route_initial (valor inicial menos gastos iniciales de la ruta)
     expected_cash: float
     progress_percent: float
     expenses: List[ExpenseLine]
