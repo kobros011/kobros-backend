@@ -55,6 +55,20 @@ def contiguous(rows: list[dict]) -> bool:
     return [x["order"] for x in rows] == list(range(1, len(rows) + 1))
 
 
+async def create_with_routes(api: Api, user: UserModel, routes: list[dict], label: str, **extra):
+    """POST /clients/ con `routes` ([{route_id, order?}]); devuelve la respuesta cruda."""
+    COUNTER["n"] += 1
+    tag = f"{STAMP}{COUNTER['n']:02d}"
+    return await api.call(user, "POST", "/clients/", json={
+        "full_name": f"QD Ord {label} {tag}", "id_document": f"QD-O{tag}", "current_address": "Calle QA", "current_phone": "3000000000",
+        "current_mobile": "3000000000", "neighborhood": "QA", "linking_date": datetime.now().isoformat(),
+        "routes": routes, "brand_id": str(user.brand_id), **extra})
+
+
+def position_of(rows: list[dict], client_id: str):
+    return next((x["order"] for x in rows if x["client_id"] == client_id), None)
+
+
 async def main() -> int:
     api = Api()
     async with async_session() as db:
@@ -166,6 +180,70 @@ async def main() -> int:
         check(r.status_code == 404, "otra marca no puede reordenar la ruta → 404", str(r.status_code))
     stable = await route_rows(api, sup, a)
     check(contiguous(stable), "tras los intentos rechazados el orden sigue 1..n")
+
+    print("== Crear cliente con ruta y prioridad ==")
+    route_c = await new_route([carlos.id], norte.id, "ORD-C")
+    route_d = await new_route([carlos.id], norte.id, "ORD-D")
+    c_id, d_id = str(route_c.id), str(route_d.id)
+    first = await new_client(api, sup, [route_c.id], "c1")
+    second = await new_client(api, sup, [route_c.id], "c2")
+    third = await new_client(api, sup, [route_c.id], "c3")
+
+    r = await create_with_routes(api, sup, [{"route_id": c_id, "order": 1}], "prio1")
+    check(r.status_code == 201, "crear con prioridad 1 → 201", r.text[:150])
+    newc = r.json()
+    rows = await route_rows(api, sup, c_id)
+    check(contiguous(rows) and len(rows) == 4 and position_of(rows, newc["id"]) == 1, "el cliente nuevo queda #1 y los demás se recorren (1..4 sin huecos)")
+    check(position_of(rows, first["id"]) == 2 and position_of(rows, third["id"]) == 4, "los clientes existentes conservan su orden relativo")
+    check([x for x in newc["routes"] if x["route_id"] == c_id][0]["order"] == 1, "la respuesta trae la prioridad por ruta")
+
+    r = await create_with_routes(api, sup, [{"route_id": c_id, "order": 3}], "prio3")
+    mid = r.json()
+    rows = await route_rows(api, sup, c_id)
+    check(r.status_code == 201 and position_of(rows, mid["id"]) == 3 and contiguous(rows), "prioridad intermedia (3) respetada y contigua")
+
+    r = await create_with_routes(api, sup, [{"route_id": c_id, "order": 99}], "prio99")
+    far = r.json()
+    rows = await route_rows(api, sup, c_id)
+    check(position_of(rows, far["id"]) == len(rows) and contiguous(rows), "una prioridad mayor al total se recorta: queda al final")
+
+    r = await create_with_routes(api, sup, [{"route_id": c_id}], "sinprio")
+    plain = r.json()
+    rows = await route_rows(api, sup, c_id)
+    check(position_of(rows, plain["id"]) == len(rows) and contiguous(rows), "sin prioridad queda al final de la ruta")
+
+    r = await create_with_routes(api, sup, [{"route_id": c_id, "order": 2}, {"route_id": d_id, "order": 1}], "dos")
+    two = r.json()
+    rows_c, rows_d = await route_rows(api, sup, c_id), await route_rows(api, sup, d_id)
+    check(r.status_code == 201 and position_of(rows_c, two["id"]) == 2 and position_of(rows_d, two["id"]) == 1 and contiguous(rows_c) and contiguous(rows_d),
+          "varias rutas, cada una con su propia prioridad independiente")
+
+    r = await create_with_routes(api, sup, [{"route_id": c_id, "order": 0}], "cero")
+    check(r.status_code == 422, "prioridad 0 → 422", str(r.status_code))
+    r = await create_with_routes(api, sup, [], "sinruta")
+    check(r.status_code == 400, "sin ninguna ruta → 400", str(r.status_code))
+
+    before = len(await route_rows(api, sup, c_id))
+    ghost = "00000000-0000-0000-0000-000000000000"
+    r = await create_with_routes(api, sup, [{"route_id": c_id, "order": 1}, {"route_id": ghost}], "fantasma")
+    check(r.status_code == 404, "una ruta inexistente → 404", str(r.status_code))
+    after = await route_rows(api, sup, c_id)
+    check(len(after) == before and contiguous(after), "tras el rechazo no queda ningún cliente a medias ni se movió la ruta")
+
+    r = await create_with_routes(api, carlos, [{"route_id": c_id, "order": 1}], "cobrador")
+    check(r.status_code == 201, "el cobrador crea con prioridad en su ruta asignada → 201", r.text[:150])
+    rows = await route_rows(api, sup, c_id)
+    check(position_of(rows, r.json()["id"]) == 1 and contiguous(rows), "la prioridad que fija el cobrador se aplica")
+    other_route = await new_route([sup.id], norte.id, "ORD-X")
+    r = await create_with_routes(api, carlos, [{"route_id": str(other_route.id)}], "noasignada")
+    check(r.status_code in (403, 404), "el cobrador no puede asignar una ruta que no tiene → 403/404", str(r.status_code))
+    if outsider:
+        r = await create_with_routes(api, outsider, [{"route_id": c_id}], "ajena")
+        check(r.status_code in (403, 404), "otra marca no puede asignar la ruta → 403/404", str(r.status_code))
+
+    legacy = await new_client(api, sup, [route_c.id, route_d.id], "legacy")
+    rows_c, rows_d = await route_rows(api, sup, c_id), await route_rows(api, sup, d_id)
+    check(position_of(rows_c, legacy["id"]) == len(rows_c) and position_of(rows_d, legacy["id"]) == len(rows_d), "compatibilidad: routes_ids sigue agregando al final")
 
     failed = [name for ok_, name in RESULTS if not ok_]
     print(f"\n{len(RESULTS) - len(failed)}/{len(RESULTS)} verificaciones OK" + (f" — FALLAN {len(failed)}" if failed else ""))

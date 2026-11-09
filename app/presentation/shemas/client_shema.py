@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from uuid import UUID
 from datetime import datetime
 from typing import Optional, List
@@ -57,6 +57,12 @@ class ClientMoreInfoRead(ClientRead):
     order: Optional[int] = None
 
 
+class ClientRouteInput(BaseModel):
+    """Ruta a la que se asigna el cliente al crearlo, con su prioridad (vacía = al final de la ruta)."""
+    route_id: UUID
+    order: Optional[int] = Field(default=None, ge=1)
+
+
 class ClientCreate(BaseModel):
     full_name: str
     id_document: str
@@ -66,6 +72,7 @@ class ClientCreate(BaseModel):
     neighborhood: str
     linking_date: datetime
     routes_ids: list[UUID] = []
+    routes: List[ClientRouteInput] = []
     brand_id: UUID
 
     guarantor_name: Optional[str] = None
@@ -80,6 +87,15 @@ class ClientCreate(BaseModel):
         if len(v) > 2:
             raise ValueError("El cliente puede tener mÃ¡ximo 2 referencias")
         return v
+
+    def route_positions(self) -> dict[UUID, Optional[int]]:
+        """Ruta -> prioridad pedida (None = al final). `routes` manda sobre `routes_ids`; sin repetidos."""
+        wanted: dict[UUID, Optional[int]] = {}
+        for item in self.routes:
+            wanted.setdefault(item.route_id, item.order)
+        for route_id in self.routes_ids:
+            wanted.setdefault(route_id, None)
+        return wanted
 
 
 class ClientUpdate(BaseModel):

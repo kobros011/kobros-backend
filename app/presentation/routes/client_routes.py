@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Request, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from typing import Optional, List, Union
+from ...core.exceptions import BadRequestException
 from ...core.pagination import Page, PaginationParams, filters_from_request, optional_pagination_params
 from ...infrastructure.dababase.db import get_db
 from ...infrastructure.repositories.client_repository import ClientRepository
@@ -56,7 +57,17 @@ async def list_clients(
     return await usecases.list_clients(filters_from_request(request), pagination)
 
 @router.post("/", response_model=ClientRead, status_code=status.HTTP_201_CREATED)
-async def create_client(client_in: ClientCreate, usecases: ClientUseCases = Depends(get_client_usecases)):
+async def create_client(
+    client_in: ClientCreate,
+    usecases: ClientUseCases = Depends(get_client_usecases),
+    db: AsyncSession = Depends(get_db),
+    user: UserModel = Depends(get_current_user),
+):
+    route_ids = list(client_in.route_positions())
+    if not route_ids:
+        raise BadRequestException("Elige al menos una ruta para el cliente")
+    for route_id in route_ids:  # la ruta debe ser de la marca del usuario y, para socio y cobrador, una asignada
+        await ensure_route_access(db, route_id, user)
     return await usecases.create_client(client=client_in)
 
 @router.put("/{client_id}", response_model=ClientRead)

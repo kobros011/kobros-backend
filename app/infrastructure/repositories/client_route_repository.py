@@ -54,30 +54,44 @@ class ClientRouteRepository(AbstractClientRouteRepository):
         )
         return int(current.scalar_one()) + 1
 
-    async def create_order_client_route(self, cliente_id, route_id):
+    async def attach_route(self, cliente_id, route_id, position: Optional[int] = None) -> ClientRouteModel:
+        """Asigna el cliente a la ruta SIN commit (lo hace quien llama, para que todo quede en una transacción).
+
+        Va al final de la ruta; con `position` queda en ese lugar y los demás se recorren (la posición se recorta a total+1).
+        Si ya estaba activo en la ruta no se toca su lugar; si estaba inactivo se reactiva.
+        """
         found = await self.db.execute(
             select(ClientRouteModel).where(ClientRouteModel.route_id == route_id, ClientRouteModel.cliente_id == cliente_id)
             .order_by(ClientRouteModel.active.desc().nulls_last(), ClientRouteModel.created_at).limit(1)
         )
         existing = found.scalars().first()
-
         if existing and existing.active is not False:
             return existing
 
-        try:
-            if existing:  # estaba inactivo: se reactiva al final de la ruta
-                next_order = await self._next_order(route_id)
-                existing.active = True
-                existing.order = next_order
-                await self.db.commit()
-                await self.db.refresh(existing)
-                return existing
+        if existing:  # estaba inactivo: se reactiva al final de la ruta
+            next_order = await self._next_order(route_id)  # antes de reactivar: la fila inactiva no cuenta
+            existing.active = True
+            existing.order = next_order
+            row = existing
+        else:
+            row = ClientRouteModel(cliente_id=cliente_id, route_id=route_id, order=await self._next_order(route_id))
+            self.db.add(row)
+        await self.db.flush()
 
-            orm_client_route = ClientRouteModel(cliente_id=cliente_id, route_id=route_id, order=await self._next_order(route_id))
-            self.db.add(orm_client_route)
+        if position is not None and position >= 1:
+            rows = await self._lock_active_rows(route_id)
+            rest = [r.id for r in rows if r.id != row.id]
+            index = min(position - 1, len(rest))
+            await self._apply_order(rest[:index] + [row.id] + rest[index:])
+            await self.db.refresh(row)
+        return row
+
+    async def create_order_client_route(self, cliente_id, route_id):
+        try:
+            row = await self.attach_route(cliente_id, route_id)
             await self.db.commit()
-            await self.db.refresh(orm_client_route)
-            return orm_client_route
+            await self.db.refresh(row)
+            return row
         except IntegrityError as e:
             await self.db.rollback()
             user_message = ValidatorErrors.integrity_error(e)

@@ -155,8 +155,8 @@ class ClientRepository(AbstractClientRepository):
 
         async def create_routes_client(client_id: UUID):
             route_repo = ClientRouteRepository(self.db)
-            for route_id in dict.fromkeys(client.routes_ids):
-                await route_repo.create_order_client_route(cliente_id=client_id, route_id=route_id)
+            for route_id, position in client.route_positions().items():
+                await route_repo.attach_route(cliente_id=client_id, route_id=route_id, position=position)
             
         try:
             stmt = (
@@ -174,7 +174,7 @@ class ClientRepository(AbstractClientRepository):
             ref_repo = ClientReferenceRepository(self.db)
 
             if not exists_client:
-                    orm_client = self.entity_to_model(Client(**client.model_dump(exclude=["routes_ids", "references"])))
+                    orm_client = self.entity_to_model(Client(**client.model_dump(exclude=["routes_ids", "routes", "references"])))
                     orm_client.guarantor_name = client.guarantor_name
                     orm_client.guarantor_cedula = client.guarantor_cedula
                     orm_client.guarantor_phone = client.guarantor_phone
@@ -199,6 +199,7 @@ class ClientRepository(AbstractClientRepository):
                 await self.toggle_client(client_id=exists_client.id)
 
             await create_routes_client(client_id=exists_client.id)
+            await self.db.commit()
 
             return exists_client
 
