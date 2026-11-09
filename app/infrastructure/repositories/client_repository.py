@@ -1,3 +1,4 @@
+from app.infrastructure.utils.access import ROUTE_SCOPED_ROLES
 from uuid import UUID
 
 from ...domain.entities.client import ClientById
@@ -13,7 +14,7 @@ from ..models.route_model import RouteModel
 from ..models.client_route_model import ClientRouteModel
 from ..models.loan_model import LoanModel
 from ..models.payment_model import PaymentModel
-from sqlalchemy import func
+from sqlalchemy import false, func
 from ..repositories.client_route_repository import ClientRouteRepository
 from ..repositories.client_contact_repository import ClientContactRepository
 from ...presentation.shemas.client_shema import ClientUpdate, ClientFilters, ClientCreate
@@ -55,7 +56,13 @@ class ClientRepository(AbstractClientRepository):
         route_id = filtersDict.get('route_id', None)
         active = filtersDict.get('active', True) in ['True', True, 'true']
 
-        routes_ids = [route_id] if route_id else await self.get_routes_id()
+        assigned_ids = await self.get_routes_id()
+        role = getattr(self.user.type_user, "value", str(self.user.type_user))
+        scoped = role in ROUTE_SCOPED_ROLES
+        if scoped:  # admin, socio y cobrador: solo clientes de sus rutas asignadas (aunque pidan otra ruta)
+            routes_ids = [route_id] if route_id and UUID(str(route_id)) in assigned_ids else ([] if route_id else assigned_ids)
+        else:
+            routes_ids = [route_id] if route_id else assigned_ids
 
         if self.user.brand_id:
             stmt = select(ClientModel).where(ClientModel.brand_id == self.user.brand_id)
@@ -66,6 +73,8 @@ class ClientRepository(AbstractClientRepository):
 
         if len(routes_ids):
             stmt = stmt.where(ClientModel.clientsroutes.any(ClientRouteModel.route_id.in_(routes_ids)))
+        elif scoped:
+            stmt = stmt.where(false())
 
         if text:
             stmt = stmt.where((ClientModel.full_name.ilike(f"%{text}%")) | (ClientModel.id_document.ilike(f"%{text}%")))
@@ -83,12 +92,23 @@ class ClientRepository(AbstractClientRepository):
                 raise NotFoundException("El cliente no fue encontrado")
 
             client = self.model_to_entity(model)
+            await self._limit_routes_to_scope([client])
             await self._attach_route_totals([client])
             return client
         except IntegrityError as e:
             user_message = ValidatorErrors.integrity_error(e)
             raise ConflictException(user_message)
         
+    async def _limit_routes_to_scope(self, clients: List[Client]) -> None:
+        """Admin, socio y cobrador solo ven las rutas del cliente donde ellos están asignados (no las de otros)."""
+        role = getattr(self.user.type_user, "value", str(self.user.type_user))
+        if role not in ROUTE_SCOPED_ROLES:
+            return
+        assigned = set(await self.get_routes_id())
+        for client in clients:
+            client.routes = [item for item in client.routes if item["route_id"] in assigned]
+            client.routes_ids = [route_id for route_id in client.routes_ids if route_id in assigned]
+
     async def _attach_route_totals(self, clients: List[Client]) -> None:
         """Agrega `route_total` (clientes activos de la ruta) a cada ruta de cada cliente, con una sola consulta."""
         route_ids = {item["route_id"] for client in clients for item in client.routes}
@@ -143,6 +163,7 @@ class ClientRepository(AbstractClientRepository):
             query_stmt = query_stmt.options(selectinload(ClientModel.clientsroutes), selectinload(ClientModel.contacts))
             items, total = await paginate_or_all(self.db, query_stmt, params, self.model_to_entity)
             await self._attach_active_loans_count(items)
+            await self._limit_routes_to_scope(items)
             await self._attach_route_totals(items)
             return items, total
         except IntegrityError as e:

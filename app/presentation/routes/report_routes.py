@@ -6,6 +6,7 @@ from typing import List, Optional, Union
 from ...infrastructure.dababase.db import get_db
 from ...infrastructure.models.user_model import UserModel
 from ...infrastructure.repositories.report_repository import ReportRepository
+from ...infrastructure.utils.access import ensure_client_access
 from ...infrastructure.utils.require_role import require_role
 from ...use_cases.report_cases import ReportUseCases
 from ...core.pagination import Page, optional_pagination_params, PaginationParams
@@ -74,7 +75,9 @@ async def delinquency_summary(
 @router.get("/clients/{client_id}/history", response_model=List[PaymentHistoryItemRead])
 async def client_payment_history(
     client_id: UUID,
-    _: UserModel = Depends(require_role(*_REPORT_ROLES)),
+    user: UserModel = Depends(require_role(*_REPORT_ROLES)),
+    db: AsyncSession = Depends(get_db),
     usecases: ReportUseCases = Depends(get_report_usecases),
 ):
+    await ensure_client_access(db, client_id, user)
     return await usecases.get_client_payment_history(client_id)

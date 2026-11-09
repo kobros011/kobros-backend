@@ -1,3 +1,4 @@
+from app.infrastructure.utils.access import ROUTE_SCOPED_ROLES
 from uuid import UUID
 from typing import Optional, List
 from ..core.pagination import PaginationParams, page_or_list
@@ -19,7 +20,7 @@ class LoanUseCases:
             scoped = dict(filters)
             if role != "01":
                 scoped["_brand_id"] = user.brand_id
-            if role in ("04", "05"):
+            if role in ROUTE_SCOPED_ROLES:
                 scoped["_assigned_user_id"] = user.id
             filters = scoped
         items, total = await self.repository.list_loans(filters, params)

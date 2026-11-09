@@ -1,3 +1,4 @@
+from app.infrastructure.utils.access import ROUTE_SCOPED_ROLES
 from fastapi import APIRouter, Depends, status, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,7 +38,7 @@ async def list_route_currencies(
     stmt = select(RouteModel.id, RouteModel.currency)
     if role != "01":
         stmt = stmt.where(RouteModel.brand_id == user.brand_id)
-    if role in ("04", "05"):
+    if role in ROUTE_SCOPED_ROLES:
         stmt = stmt.where(RouteModel.allowed_users_ids.contains([user.id]))
     return [{"id": row[0], "currency": row[1]} for row in (await db.execute(stmt)).all()]
 
@@ -68,6 +69,8 @@ async def create_route(
 ):
     if user.type_user.value != "01" and route_in.brand_id != user.brand_id:
         raise ForbiddenException("No puedes crear rutas en otra marca")
+    if user.type_user.value == "03" and user.id not in route_in.allowed_users_ids:
+        route_in.allowed_users_ids = [*route_in.allowed_users_ids, user.id]  # el admin que crea la ruta queda asignado: si no, no la vería
     return await usecases.create_route(route=route_in)
 
 @router.put("/{route_id}", response_model=RouteRead)

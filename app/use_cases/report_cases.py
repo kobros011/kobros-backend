@@ -1,7 +1,11 @@
 from uuid import UUID
 from typing import Optional, List, Union
 from app.infrastructure.repositories.report_repository import ReportRepository
+from sqlalchemy import select
+from app.core.exceptions import NotFoundException
+from app.infrastructure.models.route_model import RouteModel
 from app.infrastructure.models.user_model import UserModel
+from app.infrastructure.utils.access import ROUTE_SCOPED_ROLES
 from app.core.pagination import PaginationParams, Page, page_or_list
 
 
@@ -22,8 +26,17 @@ class ReportUseCases:
             return requested_brand_id
         return self.user.brand_id if self.user else requested_brand_id
 
-    @staticmethod
-    def _route_ids(route_id: Optional[UUID]) -> Optional[List[UUID]]:
+    async def _route_ids(self, route_id: Optional[UUID]) -> Optional[List[UUID]]:
+        """Admin y socio solo ven sus rutas asignadas (aunque pidan otra); dev y super, toda su marca."""
+        if self.user and _role(self.user) in ROUTE_SCOPED_ROLES:
+            rows = await self.repository.db.execute(
+                select(RouteModel.id).where(RouteModel.allowed_users_ids.contains([self.user.id]), RouteModel.brand_id == self.user.brand_id))
+            assigned = [row[0] for row in rows.all()]
+            if route_id:
+                if route_id not in assigned:
+                    raise NotFoundException("Ruta no encontrada")
+                return [route_id]
+            return assigned
         return [route_id] if route_id else None
 
     async def get_portfolio(
@@ -34,7 +47,7 @@ class ReportUseCases:
         params: Optional[PaginationParams] = None,
         currency: Optional[str] = None,
     ) -> Union[Page[dict], List[dict]]:
-        items, total = await self.repository.list_portfolio(self._route_ids(route_id), self._effective_brand_id(brand_id), text, params, currency)
+        items, total = await self.repository.list_portfolio(await self._route_ids(route_id), self._effective_brand_id(brand_id), text, params, currency)
         return page_or_list(items, total, params)
 
     async def get_delinquency(
@@ -45,14 +58,14 @@ class ReportUseCases:
         params: Optional[PaginationParams] = None,
         currency: Optional[str] = None,
     ) -> Union[Page[dict], List[dict]]:
-        items, total = await self.repository.list_delinquency(self._route_ids(route_id), self._effective_brand_id(brand_id), text, params, currency)
+        items, total = await self.repository.list_delinquency(await self._route_ids(route_id), self._effective_brand_id(brand_id), text, params, currency)
         return page_or_list(items, total, params)
 
     async def get_portfolio_summary(self, route_id: Optional[UUID] = None, brand_id: Optional[UUID] = None, text: Optional[str] = None, currency: Optional[str] = None) -> dict:
-        return await self.repository.portfolio_summary(self._route_ids(route_id), self._effective_brand_id(brand_id), text, currency)
+        return await self.repository.portfolio_summary(await self._route_ids(route_id), self._effective_brand_id(brand_id), text, currency)
 
     async def get_delinquency_summary(self, route_id: Optional[UUID] = None, brand_id: Optional[UUID] = None, text: Optional[str] = None, currency: Optional[str] = None) -> dict:
-        return await self.repository.delinquency_summary(self._route_ids(route_id), self._effective_brand_id(brand_id), text, currency)
+        return await self.repository.delinquency_summary(await self._route_ids(route_id), self._effective_brand_id(brand_id), text, currency)
 
     async def get_client_payment_history(self, client_id: UUID) -> List[dict]:
         return await self.repository.get_client_payment_history(client_id)

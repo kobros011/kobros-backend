@@ -49,15 +49,14 @@ def payment_conditions(route_id: UUID, day: date, collector_id: Optional[UUID], 
 
 
 def expense_conditions(route_id: UUID, day: date, collector_id: Optional[UUID], liquidation_id: Optional[UUID] = None) -> list:
-    conditions = [
+    """Gastos del día en la ruta. Se muestran, restan y enlazan todos al cerrar, sin importar quién los creó:
+    el dinero salió de la caja de la ruta ese día, la afecte o no el cobrador que liquida."""
+    return [
         ExpenseModel.route_id == route_id,
         ExpenseModel.active.is_(True),
         ExpenseModel.date == day,
         _unliquidated(ExpenseModel.liquidation_id, liquidation_id),
     ]
-    if collector_id:
-        conditions.append(ExpenseModel.created_by == collector_id)
-    return conditions
 
 
 def _payments_from(stmt):
@@ -113,13 +112,16 @@ def expected_cash(base: float, figures: dict) -> float:
     return round(base + figures["collected_total"] - figures["expenses_total"] - figures["new_loans_total"], 2)
 
 
-async def expense_lines(db: AsyncSession, route_id: UUID, day: date, collector_id: Optional[UUID], liquidation_id: Optional[UUID] = None) -> list[dict]:
+async def expense_lines(db: AsyncSession, route_id: UUID, day: date, collector_id: Optional[UUID], liquidation_id: Optional[UUID] = None,
+                         hide_creator_for: Optional[UUID] = None) -> list[dict]:
     rows = (await db.execute(
-        select(ExpenseModel.id, ExpenseModel.name, ExpenseModel.value, ExpenseConceptModel.concept.label("concept"))
+        select(ExpenseModel.id, ExpenseModel.name, ExpenseModel.value, ExpenseConceptModel.concept.label("concept"),
+               ExpenseModel.created_by, UserModel.full_name.label("created_by_name"))
         .outerjoin(ExpenseConceptModel, ExpenseConceptModel.id == ExpenseModel.expensesconcept_id)
+        .outerjoin(UserModel, UserModel.id == ExpenseModel.created_by)
         .where(*expense_conditions(route_id, day, collector_id, liquidation_id)).order_by(ExpenseModel.created_at)
     )).mappings().all()
-    return [dict(r) for r in rows]
+    return [{**r, "created_by_name": None if hide_creator_for and r["created_by"] == hide_creator_for else r["created_by_name"]} for r in rows]
 
 
 async def payment_lines(db: AsyncSession, route_id: UUID, day: date, collector_id: Optional[UUID], liquidation_id: Optional[UUID] = None) -> list[dict]:

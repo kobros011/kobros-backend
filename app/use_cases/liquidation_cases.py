@@ -1,3 +1,4 @@
+from app.infrastructure.utils.access import ROUTE_SCOPED_ROLES
 from datetime import date as date_type
 from typing import Optional
 from uuid import UUID
@@ -31,7 +32,7 @@ class LiquidationUseCases:
     def _check_route(self, route: RouteModel) -> None:
         if self.role != "01" and self.user.brand_id != route.brand_id:
             raise NotFoundException("Ruta no encontrada")
-        if self.role in ("04", "05") and self.user.id not in (route.allowed_users_ids or []):
+        if self.role in ROUTE_SCOPED_ROLES and self.user.id not in (route.allowed_users_ids or []):
             raise ForbiddenException("No tienes asignada esta ruta")
 
     async def _route(self, route_id: UUID) -> RouteModel:
@@ -53,7 +54,7 @@ class LiquidationUseCases:
         route = await self.repository.get_route(data["route_id"])
         if self.role != "01" and self.user.brand_id != route.brand_id:
             raise NotFoundException("Liquidación no encontrada")
-        if self.role in ("04", "05") and self.user.id not in (route.allowed_users_ids or []):
+        if self.role in ROUTE_SCOPED_ROLES and self.user.id not in (route.allowed_users_ids or []):
             raise NotFoundException("Liquidación no encontrada")
         return data
 
@@ -83,7 +84,7 @@ class LiquidationUseCases:
                    date_to: Optional[date_type], status: Optional[str], currency: Optional[str] = None) -> Page:
         brand_id = None if self.role == "01" else self.user.brand_id
         route_ids = None
-        if self.role in ("04", "05"):
+        if self.role in ROUTE_SCOPED_ROLES:
             rows = await self.repository.db.execute(select(RouteModel.id).where(RouteModel.allowed_users_ids.contains([self.user.id]), RouteModel.brand_id == self.user.brand_id))
             route_ids = [r[0] for r in rows.all()]
         items, total, totals = await self.repository.list_page(

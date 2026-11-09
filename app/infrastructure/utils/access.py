@@ -16,6 +16,10 @@ from app.infrastructure.models.route_model import RouteModel
 from app.infrastructure.models.user_model import UserModel
 
 
+# Administrador, socio y cobrador solo ven lo de las rutas donde están asignados; dev y super ven toda su marca.
+ROUTE_SCOPED_ROLES = ("03", "04", "05")
+
+
 def _role(user: UserModel) -> str:
     return user.type_user.value if hasattr(user.type_user, "value") else str(user.type_user)
 
@@ -33,7 +37,7 @@ async def ensure_loan_access(db: AsyncSession, loan_id: UUID, user: UserModel) -
     role = _role(user)
     if role != "01" and user.brand_id != row.brand_id:
         raise NotFoundException("Préstamo no encontrado")
-    if role in ("04", "05") and user.id not in (row.allowed_users_ids or []):
+    if role in ROUTE_SCOPED_ROLES and user.id not in (row.allowed_users_ids or []):
         raise NotFoundException("Préstamo no encontrado")
 
 
@@ -50,7 +54,7 @@ def _route_visible(route_brand, allowed, user: UserModel) -> bool:
     role = _role(user)
     if role != "01" and user.brand_id != route_brand:
         return False
-    if role in ("04", "05") and user.id not in (allowed or []):
+    if role in ROUTE_SCOPED_ROLES and user.id not in (allowed or []):
         return False
     return True
 
@@ -69,7 +73,7 @@ async def ensure_client_access(db: AsyncSession, client_id: UUID, user: UserMode
         raise NotFoundException("El cliente no fue encontrado")
     if role != "01" and user.brand_id != brand_id:
         raise NotFoundException("El cliente no fue encontrado")
-    if role in ("04", "05"):
+    if role in ROUTE_SCOPED_ROLES:
         routes = (await db.execute(
             select(RouteModel.allowed_users_ids).join(ClientRouteModel, ClientRouteModel.route_id == RouteModel.id)
             .where(ClientRouteModel.cliente_id == client_id)

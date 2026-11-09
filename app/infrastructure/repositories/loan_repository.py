@@ -1,3 +1,4 @@
+from app.infrastructure.utils.access import ROUTE_SCOPED_ROLES
 from uuid import UUID
 from ...domain.entities.loan import Loan
 from ...domain.repositories.loan_repository import AbstractLoanRepository
@@ -261,7 +262,7 @@ class LoanRepository(AbstractLoanRepository):
         role = user.type_user.value if hasattr(user.type_user, "value") else str(user.type_user)
         if role != "01" and user.brand_id != route.brand_id:
             raise NotFoundException("Orden del cliente no encontrado")
-        if role in ("04", "05") and user.id not in (route.allowed_users_ids or []):
+        if role in ROUTE_SCOPED_ROLES and user.id not in (route.allowed_users_ids or []):
             raise ForbiddenException("No tienes asignada esta ruta")
 
     async def update_loan(self, loan: LoanUpdate) -> Optional[Loan]:

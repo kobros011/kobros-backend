@@ -17,6 +17,7 @@ from ..models.route_model import RouteModel
 from ..models.user_model import UserModel
 from ..utils.validator_errors import ValidatorErrors
 from . import liquidation_calculator as calc
+from .report_repository import ReportRepository
 
 _COLLECTOR = aliased(UserModel)
 _CONFIRMER = aliased(UserModel)
@@ -94,11 +95,17 @@ class LiquidationRepository:
         row = (await self.db.execute(stmt)).mappings().first()
         return _to_read(row) if row else None
 
-    async def last_base(self, route_id: UUID, collector_id: Optional[UUID]) -> float:
-        stmt = select(LiquidationModel.value_base_delivered).where(LiquidationModel.route_id == route_id, LiquidationModel.active.is_(True))
+    async def last_base(self, route: RouteModel, collector_id: Optional[UUID]) -> float:
+        """Base sugerida: la del último cierre activo de esa ruta/cobrador; si nunca hubo uno, la cartera
+        pendiente de la ruta (evita sugerir $0 y obligar al admin a digitarla a mano)."""
+        stmt = select(LiquidationModel.value_base_delivered).where(LiquidationModel.route_id == route.id, LiquidationModel.active.is_(True))
         stmt = stmt.where(LiquidationModel.collector_id == collector_id) if collector_id else stmt
         stmt = stmt.order_by(LiquidationModel.date.desc(), LiquidationModel.created_at.desc()).limit(1)
-        return float((await self.db.execute(stmt)).scalar_one_or_none() or 0)
+        last = (await self.db.execute(stmt)).scalar_one_or_none()
+        if last is not None:
+            return float(last)
+        summary = await ReportRepository(self.db).portfolio_summary([route.id], route.brand_id, None, route.currency)
+        return float(summary["total_balance"])
 
     async def list_page(self, *, brand_id: Optional[UUID], route_ids: Optional[list], collector_id: Optional[UUID], route_id: Optional[UUID],
                         date_from: Optional[date], date_to: Optional[date], status: Optional[str], include_reopened: bool,
@@ -258,7 +265,7 @@ class LiquidationRepository:
             outdated=bool(outdated),
             current_total_charged=current["collected_total"], current_total_expenses=current["expenses_total"], current_new_loans=current["new_loans_total"],
             payments=await calc.payment_lines(self.db, route_id, day, collector_id, liquidation_id) if data["active"] else [],
-            expenses=await calc.expense_lines(self.db, route_id, day, collector_id, liquidation_id) if data["active"] else [],
+            expenses=await calc.expense_lines(self.db, route_id, day, collector_id, liquidation_id, hide_creator_for) if data["active"] else [],
             new_loans=await calc.new_loan_lines(self.db, route_id, day, collector_id, hide_creator_for),
         )
         return data
@@ -266,7 +273,7 @@ class LiquidationRepository:
     async def preview(self, route_id: UUID, day: date, collector_id: Optional[UUID], hide_creator_for: Optional[UUID] = None) -> dict:
         route = await self.get_route(route_id)
         figures = await calc.compute_figures(self.db, route_id, day, collector_id)
-        base = await self.last_base(route_id, collector_id)
+        base = await self.last_base(route, collector_id)
         existing = await self.active_for(route_id, day, collector_id)
         goal_paid = figures["collected_due_today"]
         return {
@@ -275,7 +282,7 @@ class LiquidationRepository:
             "collector_name": await self.user_name(collector_id), "date": day, "suggested_base": base,
             "expected_cash": calc.expected_cash(base, figures),
             "progress_percent": round(min(100.0, goal_paid / figures["goal"] * 100), 1) if figures["goal"] else 0.0,
-            "expenses": await calc.expense_lines(self.db, route_id, day, collector_id),
+            "expenses": await calc.expense_lines(self.db, route_id, day, collector_id, hide_creator_for=hide_creator_for),
             "new_loans": await calc.new_loan_lines(self.db, route_id, day, collector_id, hide_creator_for),
             "existing_liquidation_id": existing["id"] if existing else None,
             "existing_status": existing["status"] if existing else None,

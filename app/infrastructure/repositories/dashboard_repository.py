@@ -57,7 +57,7 @@ class DashboardRepository:
         collector_id: Optional[UUID],
         currency: Optional[str] = None,
     ) -> Scope:
-        """Rutas activas de la marca; el socio (04) solo las suyas. `route_id`/`collector_id` fuera del alcance → 404."""
+        """Rutas activas de la marca; el admin (03) y el socio (04) solo las suyas. `route_id`/`collector_id` fuera del alcance → 404."""
         routes_stmt = select(RouteModel).where(RouteModel.active == True).order_by(RouteModel.name, RouteModel.id)
         collectors_stmt = (
             select(UserModel)
@@ -69,7 +69,7 @@ class DashboardRepository:
             collectors_stmt = collectors_stmt.where(UserModel.brand_id == brand_id)
         if currency:  # solo rutas de esa moneda: nunca se suman monedas distintas
             routes_stmt = routes_stmt.where(RouteModel.currency == currency)
-        if user.type_user == UserType.partner:
+        if user.type_user in (UserType.admin, UserType.partner):
             routes_stmt = routes_stmt.where(RouteModel.allowed_users_ids.contains([user.id]))
 
         route_models = (await self.db.execute(routes_stmt)).scalars().all()

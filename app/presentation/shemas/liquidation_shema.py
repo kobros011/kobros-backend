@@ -30,6 +30,7 @@ class ExpenseLine(BaseModel):
     name: str
     concept: Optional[str] = None
     value: float
+    created_by_name: Optional[str] = None
 
 
 class PaymentLine(BaseModel):
