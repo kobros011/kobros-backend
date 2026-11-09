@@ -21,8 +21,8 @@ class ClientContactRead(BaseModel):
 class ClientContactInput(BaseModel):
     """Fiador o referencia del cliente: nombre y celular obligatorios, dirección opcional."""
     kind: Literal["fiador", "referencia"]
-    name: str = Field(min_length=1)
-    phone: str = Field(min_length=1)
+    name: str
+    phone: str
     address: Optional[str] = None
 
     @field_validator("name", "phone")
