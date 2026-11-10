@@ -11,7 +11,10 @@ from ...use_cases.loan_cases import LoanUseCases
 from ...infrastructure.utils.require_authentication import require_authentication, get_current_user
 from ...infrastructure.utils.require_role import require_role
 from ...infrastructure.models.user_model import UserModel
-from ...infrastructure.utils.access import ensure_loan_access
+from ...infrastructure.utils.access import ensure_loan_access, ensure_route_access
+from ...infrastructure.repositories.liquidation_repository import LiquidationRepository
+from ...core.clock import today_bogota
+from ..shemas.liquidation_shema import AvailableCashRead
 
 router = APIRouter(dependencies=[Depends(require_authentication)])
 
@@ -20,6 +23,16 @@ def get_loan_repository(db: AsyncSession = Depends(get_db)) -> LoanRepository:
 
 def get_loan_usecases(repository: LoanRepository = Depends(get_loan_repository)) -> LoanUseCases:
     return LoanUseCases(repository)
+
+@router.get("/available-cash", response_model=AvailableCashRead)
+async def available_cash(
+    route_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    user: UserModel = Depends(require_role("01", "02", "03", "04", "05")),
+):
+    """Efectivo disponible hoy en la ruta para entregar un crédito (el formulario avisa si el capital lo supera)."""
+    await ensure_route_access(db, route_id, user)
+    return await LiquidationRepository(db).available_cash(route_id, today_bogota())
 
 @router.get("/{loan_id}", response_model=Optional[LoanReadFull])
 async def read_loan(

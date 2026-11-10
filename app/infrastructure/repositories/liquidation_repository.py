@@ -268,6 +268,19 @@ class LiquidationRepository:
         )
         return data
 
+    async def available_cash(self, route_id: UUID, day: date) -> dict:
+        """Efectivo con el que cuenta la ruta ese día para entregar créditos nuevos: base + cuotas cobradas (sin los excedentes
+        de los abonos extra) − gastos − créditos ya entregados. Es de toda la ruta, no de un cobrador."""
+        route = await self.get_route(route_id)
+        figures = await calc.compute_figures(self.db, route_id, day, None)
+        base, base_source = await self.suggested_base(route, None)
+        collected = figures["collected_total"] - figures["beak_generated"]
+        available = round(base + collected - figures["expenses_total"] - figures["new_loans_total"], 2)
+        return {
+            "route_id": route_id, "date": day, "base": base, "base_source": base_source, "collected": round(collected, 2),
+            "expenses": figures["expenses_total"], "new_loans": figures["new_loans_total"], "available": max(available, 0.0),
+        }
+
     async def preview(self, route_id: UUID, day: date, collector_id: Optional[UUID], hide_creator_for: Optional[UUID] = None) -> dict:
         route = await self.get_route(route_id)
         figures = await calc.compute_figures(self.db, route_id, day, collector_id)

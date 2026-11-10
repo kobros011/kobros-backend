@@ -68,6 +68,18 @@ class ClosingFigures(BaseModel):
     new_loans_count: int
 
 
+class AvailableCashRead(BaseModel):
+    """Efectivo disponible en la ruta para entregar un crédito nuevo (nunca negativo)."""
+    route_id: UUID
+    date: date_type
+    base: float
+    base_source: str
+    collected: float
+    expenses: float
+    new_loans: float
+    available: float
+
+
 class LiquidationPreviewRead(ClosingFigures):
     route_id: UUID
     route_name: str

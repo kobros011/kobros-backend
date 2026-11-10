@@ -24,7 +24,7 @@ from app.infrastructure.dababase.db import async_session  # noqa: E402
 from app.infrastructure.models.brand_model import BrandModel  # noqa: E402
 from app.infrastructure.models.route_model import RouteModel  # noqa: E402
 from app.infrastructure.models.user_model import UserModel  # noqa: E402
-from scripts.qa_liquidations import STAMP  # noqa: E402
+from scripts.qa_liquidations import STAMP, new_loan  # noqa: E402
 from scripts.qa_reports import RESULTS, Api, check  # noqa: E402
 
 
@@ -60,6 +60,22 @@ async def main() -> int:
     r = await api.call(sup, "GET", "/liquidations/preview", params={"route_id": str(route.id), "day": day})
     body = r.json()
     check(body["suggested_base"] == 400_000 and body["suggested_base_source"] == "last_closure", "con un cierre previo sugiere la base de ese cierre", str((body["suggested_base"], body["suggested_base_source"])))
+
+    print("== Efectivo disponible para un crédito nuevo ==")
+    fresh = await route_with(norte.id, 1_000_000, 150_000, "C")
+    r = await api.call(sup, "GET", "/loans/available-cash", params={"route_id": str(fresh.id)})
+    body = r.json()
+    check(r.status_code == 200 and body["available"] == 850_000 and body["base"] == 850_000, "ruta nueva: disponible = base (valor inicial menos gastos iniciales)", r.text[:160])
+    await new_loan(api, sup, fresh, first_offset=0, value_payment=100_000, capital=400_000)
+    r = await api.call(sup, "GET", "/loans/available-cash", params={"route_id": str(fresh.id)})
+    body = r.json()
+    check(body["new_loans"] == 400_000 and body["collected"] == 100_000 and body["available"] == 550_000,
+          "base + cuotas cobradas − créditos entregados = 850.000 + 100.000 − 400.000", str(body))
+    await new_loan(api, sup, fresh, first_offset=0, capital=900_000)
+    r = await api.call(sup, "GET", "/loans/available-cash", params={"route_id": str(fresh.id)})
+    check(r.json()["available"] == 0, "si ya se entregó más de lo que había, el disponible es 0 (nunca negativo)", r.text[:160])
+    r = await api.call(sup, "GET", "/loans/available-cash", params={"route_id": str(uuid4())})
+    check(r.status_code == 404, "ruta inexistente → 404", str(r.status_code))
 
     failed = [name for ok_, name in RESULTS if not ok_]
     print(f"\n{len(RESULTS) - len(failed)}/{len(RESULTS)} verificaciones OK" + (f" — FALLAN {len(failed)}" if failed else ""))
